@@ -106,7 +106,8 @@ function createPanel(): void {
 
   // Spotlight behavior: click elsewhere -> dismiss
   panel.on('blur', () => {
-    if (panel?.webContents.isDevToolsOpened()) return
+    if (!panel || panel.isDestroyed()) return
+    if (panel.webContents.isDevToolsOpened()) return
     if (isPinned) return // explicit pin overrides the click-away dismiss
     hidePanel()
   })
@@ -141,25 +142,42 @@ function positionOnActiveScreen(): void {
   })
 }
 
+/** Safe IPC into the panel: no-op when it is gone or destroyed. */
+function sendToPanel(channel: string, ...args: unknown[]): void {
+  if (panel && !panel.isDestroyed()) panel.webContents.send(channel, ...args)
+}
+
+/** The panel can be destroyed under our feet (dev-server teardown, renderer
+ *  crash) while the global shortcut stays registered — calling into a
+ *  destroyed BrowserWindow throws "Object has been destroyed". Self-heal by
+ *  recreating it instead of crashing the main process. */
+function ensurePanel(): BrowserWindow {
+  if (!panel || panel.isDestroyed()) {
+    panel = null
+    createPanel()
+  }
+  return panel!
+}
+
 function showPanel(): void {
-  if (!panel) return
+  ensurePanel()
   positionOnActiveScreen()
-  panel.show() // panel type -> does not activate the app
-  panel.webContents.send('panel:shown')
+  panel!.show() // panel type -> does not activate the app
+  sendToPanel('panel:shown')
   // Non-blocking: the panel opens immediately, context arrives a beat later.
   // Frontmost app is captured *now* because the panel is a nonactivating
   // NSPanel — the real app the user was using is still frontmost.
   captureContext().then((ctx) => {
-    panel?.webContents.send('context:update', ctx)
+    sendToPanel('context:update', ctx)
   })
 }
 
 function hidePanel(): void {
-  panel?.hide()
+  if (panel && !panel.isDestroyed()) panel.hide()
 }
 
 function togglePanel(): void {
-  if (panel?.isVisible()) hidePanel()
+  if (panel && !panel.isDestroyed() && panel.isVisible()) hidePanel()
   else showPanel()
 }
 
@@ -245,7 +263,7 @@ function trayMenu(): Menu {
         checked: m === currentMaterial,
         click: (): void => {
           currentMaterial = m
-          panel?.setVibrancy(m)
+          if (panel && !panel.isDestroyed()) panel.setVibrancy(m)
           showPanel()
         }
       }))
@@ -329,7 +347,7 @@ function applyShortcut(accelerator: string): { ok: boolean; error?: string } {
 }
 
 function broadcastConfigChanged(): void {
-  panel?.webContents.send('config:changed')
+  sendToPanel('config:changed')
   scheduleBackgroundRefresh(500)
 }
 
@@ -508,7 +526,7 @@ function registerIpc(): void {
 
   ipcMain.handle('appearance:set', (_e, appearance: AppearanceConfig) => {
     setAppearance(appearance)
-    panel?.webContents.send('appearance:changed', appearance)
+    sendToPanel('appearance:changed', appearance)
     return appearance
   })
 
@@ -559,7 +577,7 @@ function registerIpc(): void {
   // a memo:get round trip) and drives the existing loadMemoIntoEditor flow.
   ipcMain.on('sticker:edit-in-panel', (_e, memoName: string) => {
     showPanel()
-    panel?.webContents.send('panel:load-memo', memoName)
+    sendToPanel('panel:load-memo', memoName)
   })
 }
 
@@ -581,8 +599,8 @@ if (!gotLock) {
     electronApp.setAppUserModelId('dev.zhijie.memoglass')
 
     setQueueListeners({
-      onChanged: (count) => panel?.webContents.send('queue:changed', { count }),
-      onItemFailed: (error) => panel?.webContents.send('queue:item-failed', { error })
+      onChanged: (count) => sendToPanel('queue:changed', { count }),
+      onItemFailed: (error) => sendToPanel('queue:item-failed', { error })
     })
 
     registerIpc()
