@@ -156,6 +156,8 @@ const api = {
   saveStickerContent: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('sticker:save-content', name, content),
   openSticker: (name: string): void => ipcRenderer.send('sticker:open', name),
+  openExternal: (url: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('shell:open-external', url),
   closeSticker: (): void => ipcRenderer.send('sticker:close-self'),
   editInPanel: (name: string): void => ipcRenderer.send('sticker:edit-in-panel', name),
   onLoadMemo: (cb: (name: string) => void): (() => void) => {

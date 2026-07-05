@@ -7,6 +7,7 @@ import {
   nativeImage,
   type NativeImage,
   screen,
+  shell,
   Tray
 } from 'electron'
 import { electronApp, is } from '@electron-toolkit/utils'
@@ -536,6 +537,17 @@ function registerIpc(): void {
       scheduleBackgroundRefresh(3000)
     }
     return result
+  })
+
+  // A sticker's rendered markdown may contain links; only ever hand http(s)
+  // URLs to the OS default-browser opener — anything else (file://, custom
+  // schemes a malicious memo could smuggle in) is silently dropped.
+  ipcMain.handle('shell:open-external', (_e, url: string) => {
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url)
+      return { ok: true }
+    }
+    return { ok: false, error: 'blocked non-http(s) url' }
   })
 
   ipcMain.on('sticker:open', (_e, memoName: string) => openSticker(memoName))

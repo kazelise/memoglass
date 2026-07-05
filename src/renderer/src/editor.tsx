@@ -87,15 +87,16 @@ function makeHighlight(p: GlassPalette): HighlightStyle {
 }
 
 /** Font/size/line-height, mirrors the shape of preload's AppearanceConfig
- *  (kept local to avoid a renderer -> preload type dependency). */
-interface EditorAppearance {
+ *  (kept local to avoid a renderer -> preload type dependency). Exported so
+ *  StickerView's read-only markdown renderer can reuse the same shape. */
+export interface EditorAppearance {
   fontFamily: string
   cjkFontFamily: string
   fontSize: number
   lineHeight: number
 }
 
-const DEFAULT_APPEARANCE: EditorAppearance = {
+export const DEFAULT_APPEARANCE: EditorAppearance = {
   fontFamily: 'system',
   cjkFontFamily: 'system',
   fontSize: 15,
@@ -107,8 +108,9 @@ const SYSTEM_FONT_STACK =
 
 /** Font stack with glyph-based fallback: latin glyphs resolve in the primary
  *  font; CJK glyphs (missing from most latin fonts) fall through to the CJK
- *  choice, then the system stack. */
-function contentFontFamily(appearance: EditorAppearance): string {
+ *  choice, then the system stack. Exported for reuse by StickerView's
+ *  markdown renderer, which follows the same appearance settings. */
+export function contentFontFamily(appearance: EditorAppearance): string {
   const parts: string[] = []
   if (appearance.fontFamily !== 'system') parts.push(`"${appearance.fontFamily}"`)
   if (appearance.cjkFontFamily !== 'system') parts.push(`"${appearance.cjkFontFamily}"`)
