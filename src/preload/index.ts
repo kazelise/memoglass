@@ -50,6 +50,24 @@ export interface ListMemosResult {
   memos?: MemoListItem[]
 }
 
+export interface CommentItem {
+  name: string
+  content: string
+  createTime: string
+}
+
+export interface ListCommentsResult {
+  ok: boolean
+  error?: string
+  comments?: CommentItem[]
+}
+
+export interface AddCommentResult {
+  ok: boolean
+  error?: string
+  comment?: CommentItem
+}
+
 export interface AppContext {
   appName: string
   bundleId: string
@@ -88,6 +106,10 @@ const api = {
     ipcRenderer.invoke('memo:update', name, content, payload),
   fetchAttachment: (name: string, filename: string): Promise<FetchAttachmentResult> =>
     ipcRenderer.invoke('attachment:fetch', name, filename),
+  listComments: (memoName: string): Promise<ListCommentsResult> =>
+    ipcRenderer.invoke('comments:list', memoName),
+  addComment: (memoName: string, content: string): Promise<AddCommentResult> =>
+    ipcRenderer.invoke('comments:add', memoName, content),
   setPinned: (pinned: boolean): void => ipcRenderer.send('panel:setPinned', pinned),
   onShown: (cb: () => void): (() => void) => {
     const listener = (): void => cb()

@@ -25,8 +25,10 @@ import {
 } from './config'
 import { captureContext } from './context'
 import {
+  createComment,
   createMemo,
   fetchAttachmentData,
+  listComments,
   listMemos,
   updateMemoWithAttachments,
   uploadAttachment,
@@ -410,6 +412,18 @@ function registerIpc(): void {
     const cfg = resolveConfig()
     if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
     return fetchAttachmentData(cfg.serverUrl, cfg.token, name, filename)
+  })
+
+  ipcMain.handle('comments:list', async (_e, memoName: string) => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+    return listComments(cfg.serverUrl, cfg.token, memoName)
+  })
+
+  ipcMain.handle('comments:add', async (_e, memoName: string, content: string) => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+    return createComment(cfg.serverUrl, cfg.token, memoName, content)
   })
 
   ipcMain.on('panel:setPinned', (_e, pinned: boolean) => {

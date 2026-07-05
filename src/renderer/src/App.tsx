@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useGlassEditor } from './editor'
-import type { AppContext, MemoListItem } from '../../preload/index'
+import type { AppContext, CommentItem, MemoListItem } from '../../preload/index'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'queued' | 'error'
 type View = 'editor' | 'setup' | 'switcher'
@@ -195,6 +195,18 @@ export default function App(): React.JSX.Element {
   // edit session — not yet deleted, just staged; surfaced in the edit
   // banner so the (irreversible) cascade delete on save isn't a surprise.
   const [removedServerCount, setRemovedServerCount] = useState(0)
+  // ---------- comments (edit mode only) ----------
+  const [commentsOpen, setCommentsOpen] = useState(false)
+  const [comments, setComments] = useState<CommentItem[]>([])
+  const [commentsError, setCommentsError] = useState('')
+  const [commentInput, setCommentInput] = useState('')
+  const [commentSending, setCommentSending] = useState(false)
+  const [commentSendError, setCommentSendError] = useState('')
+  // Guards against a slow listComments/addComment response landing after the
+  // user has already switched to a different memo (or left edit mode) —
+  // compared against on resolve so stale network replies never clobber a
+  // newer memo's comment state.
+  const activeCommentMemoRef = useRef<string | null>(null)
   const saveStateRef = useRef(saveState)
   saveStateRef.current = saveState
   const attachmentsRef = useRef<AttachmentItem[]>(attachments)
@@ -234,6 +246,47 @@ export default function App(): React.JSX.Element {
     setAttachments((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
+  const resetComments = useCallback(() => {
+    activeCommentMemoRef.current = null
+    setCommentsOpen(false)
+    setComments([])
+    setCommentsError('')
+    setCommentInput('')
+    setCommentSending(false)
+    setCommentSendError('')
+  }, [])
+
+  const sendComment = useCallback(async () => {
+    if (!editTarget) return
+    const text = commentInput.trim()
+    if (!text || commentSending) return
+    const memoName = editTarget.name
+    setCommentSending(true)
+    setCommentSendError('')
+    const res = await window.memoglass.addComment(memoName, text)
+    if (activeCommentMemoRef.current !== memoName) return // moved on meanwhile
+    if (!res.ok) {
+      setCommentSending(false)
+      setCommentSendError(res.error ?? '发送失败')
+      return
+    }
+    setCommentInput('')
+    const listRes = await window.memoglass.listComments(memoName)
+    if (activeCommentMemoRef.current !== memoName) return
+    setCommentSending(false)
+    if (listRes.ok && listRes.comments) {
+      setComments(
+        [...listRes.comments].sort(
+          (a, b) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime()
+        )
+      )
+      setCommentsError('')
+    }
+    // If the refresh itself failed, the just-sent comment is still safely on
+    // the server — leave the (now possibly stale) list as-is rather than
+    // showing an error for what was actually a successful send.
+  }, [editTarget, commentInput, commentSending])
+
   const doSave = useCallback(
     async (text: string) => {
       const trimmed = text.trim()
@@ -267,6 +320,7 @@ export default function App(): React.JSX.Element {
               return []
             })
             setRemovedServerCount(0)
+            resetComments()
             setSaveState('idle')
             window.memoglass.hidePanel()
           }, 450)
@@ -321,7 +375,7 @@ export default function App(): React.JSX.Element {
         setErrorMsg(res.error ?? '保存失败')
       }
     },
-    [attachments, editTarget, context, contextEnabled]
+    [attachments, editTarget, context, contextEnabled, resetComments]
   )
 
   const openSwitcher = useCallback(() => {
@@ -351,9 +405,10 @@ export default function App(): React.JSX.Element {
       return []
     })
     setRemovedServerCount(0)
+    resetComments()
     setView('editor')
     setTimeout(() => handle.focus(), 30)
-  }, [handle])
+  }, [handle, resetComments])
 
   const cancelEdit = useCallback(() => {
     handle.clear()
@@ -364,8 +419,9 @@ export default function App(): React.JSX.Element {
       return []
     })
     setRemovedServerCount(0)
+    resetComments()
     handle.focus()
-  }, [handle])
+  }, [handle, resetComments])
 
   const loadMemoIntoEditor = useCallback(
     (memo: MemoListItem) => {
@@ -389,6 +445,28 @@ export default function App(): React.JSX.Element {
       if (saveStateRef.current === 'error') setSaveState('idle')
       setView('editor')
       setTimeout(() => handle.focus(), 30)
+
+      // Comments: reset to collapsed/empty for the newly-loaded memo, then
+      // fetch its list in the background — never blocks entering edit mode.
+      setCommentsOpen(false)
+      setComments([])
+      setCommentsError('')
+      setCommentInput('')
+      setCommentSending(false)
+      setCommentSendError('')
+      activeCommentMemoRef.current = memo.name
+      window.memoglass.listComments(memo.name).then((res) => {
+        if (activeCommentMemoRef.current !== memo.name) return // stale: moved on
+        if (res.ok && res.comments) {
+          setComments(
+            [...res.comments].sort(
+              (a, b) => new Date(a.createTime).getTime() - new Date(b.createTime).getTime()
+            )
+          )
+        } else {
+          setCommentsError(res.error ?? '加载失败')
+        }
+      })
 
       // Hydrate real thumbnails asynchronously, one IPC round trip per
       // attachment. Pre-filter client-side (type/size already known from
@@ -604,6 +682,20 @@ export default function App(): React.JSX.Element {
         </div>
       )}
 
+      {editTarget && view === 'editor' && (
+        <CommentsSection
+          open={commentsOpen}
+          onToggle={() => setCommentsOpen((v) => !v)}
+          comments={comments}
+          loadError={commentsError}
+          inputValue={commentInput}
+          onInputChange={setCommentInput}
+          onSubmit={sendComment}
+          sending={commentSending}
+          sendError={commentSendError}
+        />
+      )}
+
       <div className="bottom-bar">
         <div className="tags">
           {context?.browser && !editTarget && (
@@ -746,6 +838,82 @@ function AttachmentChip({
       <button className="attachment-remove" onClick={onRemove} aria-label={`移除 ${item.filename}`}>
         ×
       </button>
+    </div>
+  )
+}
+
+function CommentsSection({
+  open,
+  onToggle,
+  comments,
+  loadError,
+  inputValue,
+  onInputChange,
+  onSubmit,
+  sending,
+  sendError
+}: {
+  open: boolean
+  onToggle: () => void
+  comments: CommentItem[]
+  loadError: string
+  inputValue: string
+  onInputChange: (v: string) => void
+  onSubmit: () => void
+  sending: boolean
+  sendError: string
+}): React.JSX.Element {
+  const label = comments.length > 0 ? `${comments.length} 条评论` : '添加评论'
+
+  // Enter (with or without ⌘) submits from here regardless of whether the
+  // input is inside a modifier chord — the focused control decides what
+  // gets submitted, so the comment box never lets a keystroke leak up to
+  // CodeMirror's Mod-Enter save binding or any window-level shortcut
+  // listener.
+  const onInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      e.stopPropagation()
+      onSubmit()
+    }
+  }
+
+  return (
+    <div className="comments-section">
+      <button type="button" className="comments-toggle" onClick={onToggle}>
+        💬 {label}
+      </button>
+      {open && (
+        <div className="comments-panel">
+          {loadError ? (
+            <div className="comments-load-error">评论加载失败</div>
+          ) : (
+            <div className="comments-list">
+              {comments.length === 0 ? (
+                <div className="comments-empty">暂无评论</div>
+              ) : (
+                comments.map((c) => (
+                  <div className="comment-item" key={c.name}>
+                    <div className="comment-content">{c.content}</div>
+                    <div className="comment-time">{formatRelative(c.createTime)}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+          <div className="comment-input-row">
+            <input
+              className="comment-input"
+              placeholder="添加评论…"
+              value={inputValue}
+              disabled={sending}
+              onChange={(e) => onInputChange(e.target.value)}
+              onKeyDown={onInputKeyDown}
+            />
+          </div>
+          {sendError && <span className="error-text comment-send-error">{sendError}</span>}
+        </div>
+      )}
     </div>
   )
 }

@@ -300,6 +300,82 @@ export async function fetchAttachmentData(
   }
 }
 
+/** A comment is just a child memo returned by the `/comments` sub-resource —
+ *  we only surface the fields the editor's comment panel needs. */
+export interface CommentItem {
+  name: string
+  content: string
+  createTime: string
+}
+
+export interface ListCommentsResult extends MemosResult {
+  comments?: CommentItem[]
+}
+
+export interface CreateCommentResult extends MemosResult {
+  comment?: CommentItem
+}
+
+/** Lists a memo's comments (oldest-first is the caller's job — this returns
+ *  whatever order the server gives back). `memoName` is the full resource
+ *  name, e.g. "memos/xxx". */
+export async function listComments(
+  serverUrl: string,
+  token: string,
+  memoName: string
+): Promise<ListCommentsResult> {
+  try {
+    const res = await request(serverUrl, token, `/api/v1/${memoName}/comments`)
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+    }
+    const json = (await res.json().catch(() => null)) as { memos?: CommentItem[] } | null
+    if (!json?.memos) return { ok: false, error: '服务器返回格式异常' }
+    const comments: CommentItem[] = json.memos.map((m) => ({
+      name: m.name,
+      content: m.content,
+      createTime: m.createTime
+    }))
+    return { ok: true, comments }
+  } catch (e) {
+    const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
+    return { ok: false, error: msg, networkError: isNetworkError(e) }
+  }
+}
+
+/** Posts a new comment (a child memo) under `memoName`. */
+export async function createComment(
+  serverUrl: string,
+  token: string,
+  memoName: string,
+  content: string
+): Promise<CreateCommentResult> {
+  try {
+    const res = await request(serverUrl, token, `/api/v1/${memoName}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content })
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+    }
+    const json = (await res.json().catch(() => null)) as Partial<CommentItem> | null
+    if (!json?.name) return { ok: false, error: '服务器未返回评论' }
+    return {
+      ok: true,
+      comment: {
+        name: json.name,
+        content: json.content ?? content,
+        createTime: json.createTime ?? ''
+      }
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
+    return { ok: false, error: msg, networkError: isNetworkError(e) }
+  }
+}
+
 /** Updates an existing memo's content AND its full attachment list in one
  *  go. Tries a single PATCH with a combined `updateMask=content,attachments`
  *  first (confirmed working against Memos v0.29.1); if that request itself
