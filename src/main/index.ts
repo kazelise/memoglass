@@ -502,6 +502,12 @@ function registerIpc(): void {
 
 // ---------- lifecycle ----------
 
+// Dev and packaged builds otherwise share userData ("memoglass"), which makes
+// the single-instance lock mutually exclusive and mixes configs. Isolate dev.
+if (!app.isPackaged) {
+  app.setPath('userData', `${app.getPath('userData')}-dev`)
+}
+
 const gotLock = app.requestSingleInstanceLock()
 if (!gotLock) {
   app.quit()
