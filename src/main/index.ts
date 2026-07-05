@@ -3,6 +3,7 @@ import { electronApp, is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { resolveConfig, saveConfig } from './config'
 import { createMemo, verifyCredentials } from './memos'
+import { getTags, mergeSavedContent, scheduleBackgroundRefresh } from './tags'
 
 const PANEL_W = 640
 const PANEL_H = 320
@@ -113,8 +114,15 @@ function registerIpc(): void {
   ipcMain.handle('memo:save', async (_e, content: string) => {
     const cfg = resolveConfig()
     if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
-    return createMemo(cfg.serverUrl, cfg.token, content)
+    const result = await createMemo(cfg.serverUrl, cfg.token, content)
+    if (result.ok) {
+      mergeSavedContent(content)
+      scheduleBackgroundRefresh(3000)
+    }
+    return result
   })
+
+  ipcMain.handle('tags:list', () => getTags())
 
   ipcMain.handle('config:get', () => {
     const cfg = resolveConfig()
@@ -147,6 +155,7 @@ if (!gotLock) {
     createPanel()
     createTray()
     registerShortcut()
+    scheduleBackgroundRefresh()
     console.log('[memoglass] ready; shortcut =', activeShortcut || 'NONE')
   })
 

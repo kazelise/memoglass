@@ -8,6 +8,7 @@ const api = {
   setConfig: (serverUrl: string, token: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('config:set', serverUrl, token),
   hidePanel: (): void => ipcRenderer.send('panel:hide'),
+  listTags: (): Promise<{ name: string; count: number }[]> => ipcRenderer.invoke('tags:list'),
   onShown: (cb: () => void): (() => void) => {
     const listener = (): void => cb()
     ipcRenderer.on('panel:shown', listener)

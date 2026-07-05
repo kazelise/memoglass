@@ -227,3 +227,39 @@ body,
 .setup .save-btn {
   align-self: flex-end;
 }
+
+/* ---------- editor: hashtag + task-list + autocomplete ---------- */
+
+.cm-hashtag {
+  color: #9fd4b0;
+}
+
+.cm-taskmarker {
+  cursor: pointer;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete {
+  background: rgba(30, 30, 32, 0.92);
+  backdrop-filter: blur(20px);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul {
+  font-family: inherit;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  padding: 6px 10px;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: rgba(107, 168, 122, 0.35);
+  color: #fff;
+}
