@@ -11,12 +11,16 @@ export interface ResolvedConfig {
 
 export interface AppearanceConfig {
   fontFamily: string
+  /** Separate CJK fallback: latin glyphs hit fontFamily, CJK glyphs fall
+   *  through to this ('system' = no explicit CJK override). */
+  cjkFontFamily: string
   fontSize: number
   lineHeight: number
 }
 
 export const DEFAULT_APPEARANCE: AppearanceConfig = {
   fontFamily: 'system',
+  cjkFontFamily: 'system',
   fontSize: 15,
   lineHeight: 1.65
 }
@@ -101,6 +105,8 @@ export function getAppearance(): AppearanceConfig {
   const a = readRawConfig().appearance ?? {}
   return {
     fontFamily: typeof a.fontFamily === 'string' ? a.fontFamily : DEFAULT_APPEARANCE.fontFamily,
+    cjkFontFamily:
+      typeof a.cjkFontFamily === 'string' ? a.cjkFontFamily : DEFAULT_APPEARANCE.cjkFontFamily,
     fontSize: typeof a.fontSize === 'number' ? a.fontSize : DEFAULT_APPEARANCE.fontSize,
     lineHeight: typeof a.lineHeight === 'number' ? a.lineHeight : DEFAULT_APPEARANCE.lineHeight
   }

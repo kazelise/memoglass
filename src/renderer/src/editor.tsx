@@ -90,12 +90,14 @@ function makeHighlight(p: GlassPalette): HighlightStyle {
  *  (kept local to avoid a renderer -> preload type dependency). */
 interface EditorAppearance {
   fontFamily: string
+  cjkFontFamily: string
   fontSize: number
   lineHeight: number
 }
 
 const DEFAULT_APPEARANCE: EditorAppearance = {
   fontFamily: 'system',
+  cjkFontFamily: 'system',
   fontSize: 15,
   lineHeight: 1.65
 }
@@ -103,10 +105,15 @@ const DEFAULT_APPEARANCE: EditorAppearance = {
 const SYSTEM_FONT_STACK =
   '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
 
+/** Font stack with glyph-based fallback: latin glyphs resolve in the primary
+ *  font; CJK glyphs (missing from most latin fonts) fall through to the CJK
+ *  choice, then the system stack. */
 function contentFontFamily(appearance: EditorAppearance): string {
-  return appearance.fontFamily === 'system'
-    ? SYSTEM_FONT_STACK
-    : `"${appearance.fontFamily}", ${SYSTEM_FONT_STACK}`
+  const parts: string[] = []
+  if (appearance.fontFamily !== 'system') parts.push(`"${appearance.fontFamily}"`)
+  if (appearance.cjkFontFamily !== 'system') parts.push(`"${appearance.cjkFontFamily}"`)
+  parts.push(SYSTEM_FONT_STACK)
+  return parts.join(', ')
 }
 
 function makeTheme(

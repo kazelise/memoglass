@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 
 export interface AppearanceConfig {
   fontFamily: string
+  cjkFontFamily: string
   fontSize: number
   lineHeight: number
 }

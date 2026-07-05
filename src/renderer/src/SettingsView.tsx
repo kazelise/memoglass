@@ -3,12 +3,14 @@ import { acceleratorToSymbol, keyEventToAccelerator } from './shortcutUtil'
 
 interface AppearanceConfig {
   fontFamily: string
+  cjkFontFamily: string
   fontSize: number
   lineHeight: number
 }
 
 const DEFAULT_APPEARANCE: AppearanceConfig = {
   fontFamily: 'system',
+  cjkFontFamily: 'system',
   fontSize: 15,
   lineHeight: 1.65
 }
@@ -22,6 +24,16 @@ const FONT_OPTIONS: { label: string; value: string }[] = [
   { label: 'SF Mono', value: 'SF Mono' },
   { label: 'Menlo', value: 'Menlo' },
   { label: 'JetBrains Mono', value: 'JetBrains Mono' }
+]
+
+const CJK_FONT_OPTIONS: { label: string; value: string }[] = [
+  { label: '跟随主字体', value: 'system' },
+  { label: 'LXGW WenKai', value: 'LXGW WenKai' },
+  { label: 'PingFang SC', value: 'PingFang SC' },
+  { label: 'Songti SC', value: 'Songti SC' },
+  { label: 'Kaiti SC', value: 'Kaiti SC' },
+  { label: 'Yuanti SC', value: 'Yuanti SC' },
+  { label: 'Hiragino Sans GB', value: 'Hiragino Sans GB' }
 ]
 
 const CUSTOM_VALUE = '__custom__'
@@ -39,8 +51,12 @@ function isFontAvailable(name: string): boolean {
   }
 }
 
-function previewFontFamily(fontFamily: string): string {
-  return fontFamily === 'system' ? FONT_STACK_FALLBACK : `"${fontFamily}", ${FONT_STACK_FALLBACK}`
+function previewFontFamily(a: AppearanceConfig): string {
+  const parts: string[] = []
+  if (a.fontFamily !== 'system') parts.push(`"${a.fontFamily}"`)
+  if (a.cjkFontFamily !== 'system') parts.push(`"${a.cjkFontFamily}"`)
+  parts.push(FONT_STACK_FALLBACK)
+  return parts.join(', ')
 }
 
 type Tab = 'appearance' | 'server' | 'shortcut'
@@ -160,6 +176,26 @@ function AppearanceTab(): React.JSX.Element {
       </div>
 
       <div className="settings-row">
+        <label>中文字体</label>
+        <div className="settings-field">
+          <select
+            value={appearance.cjkFontFamily}
+            onChange={(e) => apply({ ...appearance, cjkFontFamily: e.target.value })}
+          >
+            {CJK_FONT_OPTIONS.map((f) => {
+              const available = f.value === 'system' || isFontAvailable(f.value)
+              return (
+                <option key={f.value} value={f.value} disabled={!available}>
+                  {f.label}
+                  {available ? '' : '（未安装）'}
+                </option>
+              )
+            })}
+          </select>
+        </div>
+      </div>
+
+      <div className="settings-row">
         <label>字号</label>
         <div className="settings-field">
           <input
@@ -192,7 +228,7 @@ function AppearanceTab(): React.JSX.Element {
       <div
         className="settings-preview"
         style={{
-          fontFamily: previewFontFamily(appearance.fontFamily),
+          fontFamily: previewFontFamily(appearance),
           fontSize: `${appearance.fontSize}px`,
           lineHeight: appearance.lineHeight
         }}
