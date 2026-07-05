@@ -474,3 +474,127 @@ export function useGlassEditor({ onSave, onEscape, onChange, onSwitcher }: Edito
 
   return { containerRef, handle }
 }
+
+// ---------- sticker editor: a deliberately smaller assembly ----------
+//
+// Stickers run in their own BrowserWindow/renderer process (a fresh module
+// instantiation of this whole file), so reusing the module-scope consts
+// above (themeCompartment, taskMarkerPlugin, hashtagColorPlugin, ...)
+// across the main panel and a sticker window is safe — they never
+// coexist inside the same JS realm.
+//
+// This is *not* useGlassEditor with a smaller props object: that hook
+// hard-wires the panel-only concerns (⌘P switcher keymap, ⌘Enter save,
+// Escape-to-hide, hashtag-completion tied to the panel's 'panel:shown'
+// broadcast). None of that belongs on a sticker — a sticker never
+// switches memos, never hides-on-escape, and has no completion popover to
+// host. Threading all of that through optional props on the shared hook
+// would leave every call site guessing which combination of undefined
+// callbacks is safe, so a sticker-specific assembly that only pulls in the
+// pieces it actually wants (markdown, theme, checkbox toggling, tag
+// coloring, bold/italic) is the cleaner cut.
+
+/** Slightly smaller/tighter than the main panel per the sticker spec: -1px
+ *  font size, -0.15 line-height, floored so an extreme user setting can't
+ *  invert the relationship. */
+function stickerAppearance(a: EditorAppearance): EditorAppearance {
+  return {
+    ...a,
+    fontSize: Math.max(11, a.fontSize - 1),
+    lineHeight: Math.max(1.3, a.lineHeight - 0.15)
+  }
+}
+
+export interface StickerEditorProps {
+  onChange: (content: string) => void
+}
+
+export function useStickerEditor({ onChange }: StickerEditorProps): {
+  containerRef: React.RefObject<HTMLDivElement | null>
+  handle: EditorHandle
+} {
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const viewRef = useRef<EditorView | null>(null)
+  const cbRef = useRef({ onChange })
+  cbRef.current = { onChange }
+
+  useEffect(() => {
+    if (!containerRef.current) return
+
+    const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
+    let currentDark = darkMq.matches
+    let currentAppearance = DEFAULT_APPEARANCE
+
+    const view = new EditorView({
+      state: EditorState.create({
+        doc: '',
+        extensions: [
+          history(),
+          markdown({ base: markdownLanguage }), // addKeymap defaults true -> Enter continues lists/tasks
+          themeCompartment.of(glassAppearance(currentDark, stickerAppearance(currentAppearance))),
+          EditorView.lineWrapping,
+          hashtagColorPlugin,
+          taskMarkerPlugin,
+          taskCheckboxHandlers,
+          formattingKeymap,
+          keymap.of([...defaultKeymap, ...historyKeymap]),
+          EditorView.updateListener.of((u) => {
+            if (u.docChanged) cbRef.current.onChange(u.state.doc.toString())
+          })
+        ]
+      }),
+      parent: containerRef.current
+    })
+    viewRef.current = view
+
+    const reconfigureTheme = (): void => {
+      view.dispatch({
+        effects: themeCompartment.reconfigure(
+          glassAppearance(currentDark, stickerAppearance(currentAppearance))
+        )
+      })
+    }
+
+    const onSchemeChange = (e: MediaQueryListEvent): void => {
+      currentDark = e.matches
+      reconfigureTheme()
+    }
+    darkMq.addEventListener('change', onSchemeChange)
+
+    window.memoglass.getAppearance().then((a) => {
+      currentAppearance = a
+      reconfigureTheme()
+    })
+    const offAppearance = window.memoglass.onAppearanceChanged((a) => {
+      currentAppearance = a
+      reconfigureTheme()
+    })
+
+    return () => {
+      offAppearance()
+      darkMq.removeEventListener('change', onSchemeChange)
+      view.destroy()
+      viewRef.current = null
+    }
+  }, [])
+
+  const handle: EditorHandle = {
+    focus: () => viewRef.current?.focus(),
+    clear: () => {
+      const v = viewRef.current
+      if (!v) return
+      v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: '' } })
+    },
+    getContent: () => viewRef.current?.state.doc.toString() ?? '',
+    setContent: (text: string) => {
+      const v = viewRef.current
+      if (!v) return
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: text },
+        selection: EditorSelection.cursor(text.length)
+      })
+    }
+  }
+
+  return { containerRef, handle }
+}

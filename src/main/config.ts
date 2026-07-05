@@ -35,12 +35,25 @@ export const DEFAULT_PANEL_SIZE: PanelSize = {
   height: 320
 }
 
+export interface StickerBounds {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export interface StickerRecord {
+  name: string // memo resource name, e.g. "memos/xxx"
+  bounds: StickerBounds
+}
+
 interface StoredConfig {
   serverUrl?: string
   tokenB64?: string // safeStorage-encrypted token, base64
   appearance?: Partial<AppearanceConfig>
   panelSize?: Partial<PanelSize>
   shortcut?: string // custom global-shortcut accelerator, e.g. 'Alt+Space'
+  stickers?: StickerRecord[] // desktop sticker windows currently pinned open
 }
 
 const configPath = (): string => join(app.getPath('userData'), 'config.json')
@@ -145,4 +158,51 @@ export function setShortcut(accelerator: string): void {
 export function clearShortcut(): void {
   const existing = readRawConfig()
   writeRawConfig({ ...existing, shortcut: undefined })
+}
+
+/** Sanitizes whatever's on disk into a well-shaped array, dropping any
+ *  entry that doesn't look like a valid record (defensive against a
+ *  hand-edited or partially-written config.json). */
+function normalizeStickers(raw: unknown): StickerRecord[] {
+  if (!Array.isArray(raw)) return []
+  const out: StickerRecord[] = []
+  for (const item of raw) {
+    if (
+      item &&
+      typeof item === 'object' &&
+      typeof (item as StickerRecord).name === 'string' &&
+      (item as StickerRecord).bounds &&
+      typeof (item as StickerRecord).bounds.x === 'number' &&
+      typeof (item as StickerRecord).bounds.y === 'number' &&
+      typeof (item as StickerRecord).bounds.width === 'number' &&
+      typeof (item as StickerRecord).bounds.height === 'number'
+    ) {
+      out.push(item as StickerRecord)
+    }
+  }
+  return out
+}
+
+/** Every sticker window that should reappear on next launch. */
+export function getStickers(): StickerRecord[] {
+  return normalizeStickers(readRawConfig().stickers)
+}
+
+/** Upserts one sticker's persisted position/size (called on create and on
+ *  debounced move/resize). */
+export function setStickerBounds(name: string, bounds: StickerBounds): void {
+  const existing = readRawConfig()
+  const list = normalizeStickers(existing.stickers)
+  const idx = list.findIndex((s) => s.name === name)
+  if (idx >= 0) list[idx] = { name, bounds }
+  else list.push({ name, bounds })
+  writeRawConfig({ ...existing, stickers: list })
+}
+
+/** Drops a sticker from the persisted set — called when its window closes,
+ *  so a sticker the user explicitly closed doesn't come back on restart. */
+export function removeSticker(name: string): void {
+  const existing = readRawConfig()
+  const list = normalizeStickers(existing.stickers).filter((s) => s.name !== name)
+  writeRawConfig({ ...existing, stickers: list })
 }

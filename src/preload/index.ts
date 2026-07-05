@@ -69,6 +69,13 @@ export interface AddCommentResult {
   comment?: CommentItem
 }
 
+export interface GetMemoResult {
+  ok: boolean
+  error?: string
+  memo?: MemoListItem
+  notFound?: boolean
+}
+
 export interface AppContext {
   appName: string
   bundleId: string
@@ -142,6 +149,19 @@ const api = {
     const listener = (_e: unknown, payload: { error: string }): void => cb(payload.error)
     ipcRenderer.on('queue:item-failed', listener)
     return () => ipcRenderer.removeListener('queue:item-failed', listener)
+  },
+
+  // ---------- stickers ----------
+  getMemo: (name: string): Promise<GetMemoResult> => ipcRenderer.invoke('memo:get', name),
+  saveStickerContent: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('sticker:save-content', name, content),
+  openSticker: (name: string): void => ipcRenderer.send('sticker:open', name),
+  closeSticker: (): void => ipcRenderer.send('sticker:close-self'),
+  editInPanel: (name: string): void => ipcRenderer.send('sticker:edit-in-panel', name),
+  onLoadMemo: (cb: (name: string) => void): (() => void) => {
+    const listener = (_e: unknown, name: string): void => cb(name)
+    ipcRenderer.on('panel:load-memo', listener)
+    return () => ipcRenderer.removeListener('panel:load-memo', listener)
   }
 }
 

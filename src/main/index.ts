@@ -28,12 +28,21 @@ import {
   createComment,
   createMemo,
   fetchAttachmentData,
+  getMemo,
   listComments,
   listMemos,
+  updateMemo,
   updateMemoWithAttachments,
   uploadAttachment,
   verifyCredentials
 } from './memos'
+import {
+  closeAllStickers,
+  closeStickerByWebContents,
+  hasOpenStickers,
+  openSticker,
+  restoreStickers
+} from './stickers'
 import {
   enqueue,
   flushQueue,
@@ -221,6 +230,11 @@ function trayMenu(): Menu {
     { label: '打开 memoglass', click: showPanel },
     { type: 'separator' },
     { label: '设置…', click: createSettingsWindow },
+    {
+      label: '关闭所有便签',
+      enabled: hasOpenStickers(),
+      click: closeAllStickers
+    },
     { type: 'separator' },
     {
       label: `玻璃材质（当前 ${currentMaterial}）`,
@@ -500,6 +514,41 @@ function registerIpc(): void {
   ipcMain.handle('queue:count', () => getQueueCount())
 
   ipcMain.handle('queue:flush', async () => flushQueue())
+
+  // ---------- stickers ----------
+
+  ipcMain.handle('memo:get', async (_e, name: string) => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+    return getMemo(cfg.serverUrl, cfg.token, name)
+  })
+
+  // Content-only autosave for stickers: a plain `updateMask=content` PATCH
+  // never touches the attachments field server-side, so — unlike the main
+  // panel's edit path — there's no need to fetch/re-send the memo's
+  // existing attachment list just to avoid clobbering it.
+  ipcMain.handle('sticker:save-content', async (_e, name: string, content: string) => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+    const result = await updateMemo(cfg.serverUrl, cfg.token, name, content)
+    if (result.ok) {
+      mergeSavedContent(content)
+      scheduleBackgroundRefresh(3000)
+    }
+    return result
+  })
+
+  ipcMain.on('sticker:open', (_e, memoName: string) => openSticker(memoName))
+
+  ipcMain.on('sticker:close-self', (e) => closeStickerByWebContents(e.sender))
+
+  // "在主面板打开": bring the Spotlight panel to front and hand it the memo
+  // name to load — the renderer assembles a MemoListItem (from its cache or
+  // a memo:get round trip) and drives the existing loadMemoIntoEditor flow.
+  ipcMain.on('sticker:edit-in-panel', (_e, memoName: string) => {
+    showPanel()
+    panel?.webContents.send('panel:load-memo', memoName)
+  })
 }
 
 // ---------- lifecycle ----------
@@ -532,6 +581,7 @@ if (!gotLock) {
     createPanel()
     registerShortcut()
     scheduleBackgroundRefresh()
+    restoreStickers()
 
     const pendingCount = getQueueCount()
     if (pendingCount > 0) {

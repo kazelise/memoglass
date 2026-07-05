@@ -306,6 +306,53 @@ export async function fetchAttachmentData(
   }
 }
 
+export interface GetMemoResult extends MemosResult {
+  memo?: MemoListItem
+  /** True on a confirmed 404 (memo deleted/never existed) — distinct from a
+   *  generic error so callers (the sticker view) can show "note was
+   *  deleted" instead of a retryable-looking error state. */
+  notFound?: boolean
+}
+
+/** Fetches one memo's full current state (content/updateTime/attachments).
+ *  `name` carries the "memos/xxx" resource prefix. Used by sticker windows
+ *  to hydrate on open — they don't ride along on the ⌘P switcher's list
+ *  cache since a sticker can outlive that cache or point at a memo that
+ *  fell off the recent-50 window. */
+export async function getMemo(
+  serverUrl: string,
+  token: string,
+  name: string
+): Promise<GetMemoResult> {
+  try {
+    const res = await request(serverUrl, token, `/api/v1/${name}`)
+    if (res.status === 404) return { ok: false, notFound: true, error: '笔记不存在' }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+    }
+    const json = (await res.json().catch(() => null)) as RawMemoListItem | null
+    if (!json?.name) return { ok: false, error: '服务器返回格式异常' }
+    const memo: MemoListItem = {
+      name: json.name,
+      content: json.content,
+      updateTime: json.updateTime,
+      tags: json.tags,
+      pinned: json.pinned,
+      attachments: (json.attachments ?? []).map((a) => ({
+        name: a.name,
+        filename: a.filename,
+        type: a.type,
+        size: typeof a.size === 'string' ? Number(a.size) || 0 : a.size
+      }))
+    }
+    return { ok: true, memo }
+  } catch (e) {
+    const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
+    return { ok: false, error: msg, networkError: isNetworkError(e) }
+  }
+}
+
 /** A comment is just a child memo returned by the `/comments` sub-resource —
  *  we only surface the fields the editor's comment panel needs. */
 export interface CommentItem {

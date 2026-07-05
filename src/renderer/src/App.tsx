@@ -606,11 +606,32 @@ export default function App(): React.JSX.Element {
       } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
         e.preventDefault()
         setView('editor')
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault()
+        const target = filteredRef.current[safeSwitcherIndexRef.current]
+        if (target) window.memoglass.openSticker(target.name)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [view, loadMemoIntoEditor])
+
+  // "在主面板打开" from a sticker window: bring this memo into edit mode,
+  // preferring the already-cached switcher list (instant) and falling back
+  // to a memo:get round trip for a memo that's fallen off that cache.
+  useEffect(() => {
+    const off = window.memoglass.onLoadMemo((name) => {
+      const cached = memoListCache.find((m) => m.name === name)
+      if (cached) {
+        loadMemoIntoEditor(cached)
+        return
+      }
+      window.memoglass.getMemo(name).then((res) => {
+        if (res.ok && res.memo) loadMemoIntoEditor(res.memo)
+      })
+    })
+    return off
+  }, [loadMemoIntoEditor])
 
   // Keep selected row in view as the user arrows through the list.
   useEffect(() => {
@@ -687,9 +708,17 @@ export default function App(): React.JSX.Element {
               <span className="edit-banner-warn">（保存将删除 {removedServerCount} 个附件）</span>
             )}
           </span>
-          <button className="edit-banner-cancel" onClick={cancelEdit}>
-            取消
-          </button>
+          <div className="edit-banner-actions">
+            <button
+              className="edit-banner-pin"
+              onClick={() => editTarget && window.memoglass.openSticker(editTarget.name)}
+            >
+              📌 钉成便签
+            </button>
+            <button className="edit-banner-cancel" onClick={cancelEdit}>
+              取消
+            </button>
+          </div>
         </div>
       )}
 
@@ -843,6 +872,17 @@ export default function App(): React.JSX.Element {
                   onMouseEnter={() => setSwitcherIndex(i)}
                   onClick={() => loadMemoIntoEditor(memo)}
                 >
+                  <button
+                    type="button"
+                    className="switcher-item-pin"
+                    title="钉到桌面 (⌘D)"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      window.memoglass.openSticker(memo.name)
+                    }}
+                  >
+                    📌
+                  </button>
                   <div className="switcher-item-line1">{preview}</div>
                   <div className="switcher-item-line2">
                     <span className="switcher-item-time">{formatRelative(memo.updateTime)}</span>
