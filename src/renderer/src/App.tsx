@@ -357,6 +357,23 @@ export default function App(): React.JSX.Element {
     })
   }, [])
 
+  // Global ⌘P fallback: the CodeMirror keymap only fires while the editor has
+  // focus. This capture-phase listener makes the switcher reachable from any
+  // focus state (fresh panel, bottom bar, attachment strip) and blocks
+  // Chromium's default print handling.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        e.stopPropagation()
+        if (view === 'editor') openSwitcher()
+        else if (view === 'switcher') setView('editor')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown, true)
+    return () => window.removeEventListener('keydown', onKeyDown, true)
+  }, [view, openSwitcher])
+
   // Focus editor every time the panel appears; check config on mount
   useEffect(() => {
     window.memoglass.getConfig().then((cfg) => {
