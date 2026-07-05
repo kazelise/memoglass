@@ -1,0 +1,229 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* The window IS the card: vibrancy shows through, we add the specular rim. */
+.card {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 22px 14px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  border-radius: inherit;
+}
+
+.drag-strip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 22px;
+  -webkit-app-region: drag;
+}
+
+.editor-wrap {
+  flex: 1;
+  min-height: 0;
+  cursor: text;
+  user-select: text;
+}
+
+.editor-wrap .cm-editor {
+  height: 100%;
+}
+
+/* ---------- bottom bar ---------- */
+
+.bottom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.tags {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tag-pill {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: #9fd4b0;
+  background: rgba(107, 168, 122, 0.18);
+  border: 0.5px solid rgba(107, 168, 122, 0.35);
+  padding: 2.5px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.right-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.char-count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.dev-badge {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  color: rgba(255, 210, 120, 0.9);
+  border: 0.5px solid rgba(255, 210, 120, 0.4);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.error-text {
+  font-size: 11.5px;
+  color: #ff8a8a;
+  max-width: 260px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.save-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.45);
+  background: rgba(255, 255, 255, 0.08);
+  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  padding: 5px 12px;
+  border-radius: 999px;
+  cursor: default;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.save-btn.enabled {
+  color: #fff;
+  background: rgba(107, 168, 122, 0.75);
+  border-color: rgba(107, 168, 122, 0.5);
+  cursor: pointer;
+}
+
+.save-btn.enabled:hover {
+  background: rgba(107, 168, 122, 0.9);
+}
+
+.save-btn kbd {
+  font-family: inherit;
+  font-size: 10.5px;
+  opacity: 0.75;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ---------- saved overlay ---------- */
+
+.saved-overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  border-radius: inherit;
+  background: rgba(0, 0, 0, 0.15);
+  animation: fade-in 0.15s ease-out;
+}
+
+.saved-check {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 700;
+  color: #fff;
+  background: rgba(107, 168, 122, 0.95);
+  animation: pop-in 0.28s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+
+@keyframes pop-in {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* ---------- setup view ---------- */
+
+.setup {
+  gap: 12px;
+  justify-content: center;
+  padding: 32px 48px;
+}
+
+.setup h2 {
+  font-size: 16px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.92);
+  margin-bottom: 4px;
+}
+
+.setup input {
+  font-family: inherit;
+  font-size: 13.5px;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(255, 255, 255, 0.08);
+  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 9px 12px;
+  outline: none;
+}
+
+.setup input:focus {
+  border-color: rgba(107, 168, 122, 0.6);
+}
+
+.setup input::placeholder {
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.setup .save-btn {
+  align-self: flex-end;
+}
