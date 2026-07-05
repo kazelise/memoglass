@@ -227,6 +227,13 @@ export default function App(): React.JSX.Element {
         </div>
         <div className="right-cluster">
           {saveState === 'error' && <span className="error-text">{errorMsg}</span>}
+          <button
+            className="icon-btn"
+            title="设置"
+            onClick={() => window.memoglass.openSettings()}
+          >
+            ⚙
+          </button>
           {source === 'dev' && <span className="dev-badge">dev</span>}
           {content.length > 0 && <span className="char-count">{content.length}</span>}
           <button

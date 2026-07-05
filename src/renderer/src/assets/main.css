@@ -506,3 +506,21 @@ body,
 .attachment-chip:hover .attachment-remove {
   display: flex;
 }
+
+/* ---------- inline settings button ---------- */
+
+.icon-btn {
+  font-size: 13px;
+  line-height: 1;
+  color: var(--text-3);
+  background: transparent;
+  border: none;
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.icon-btn:hover {
+  color: var(--text-1);
+}

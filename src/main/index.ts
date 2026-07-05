@@ -271,6 +271,10 @@ function registerIpc(): void {
   })
 
   ipcMain.on('panel:hide', hidePanel)
+  ipcMain.on('settings:open', () => {
+    hidePanel()
+    createSettingsWindow()
+  })
 
   ipcMain.handle('appearance:get', () => getAppearance())
 
@@ -304,12 +308,26 @@ if (!gotLock) {
     setTimeout(() => {
       if (process.platform === 'darwin') app.dock?.hide() // accessory: no Dock icon, no Cmd-Tab
       // bounds with a real x/width = the system actually placed the icon
+      const tb = tray?.getBounds()
       console.log(
         '[memoglass] tray after dock.hide — destroyed:',
         tray?.isDestroyed(),
         'bounds:',
-        JSON.stringify(tray?.getBounds())
+        JSON.stringify(tb)
       )
+      // Map the tray icon to a physical display so we can tell the user
+      // exactly which screen's menu bar it landed on.
+      for (const d of screen.getAllDisplays()) {
+        const hit =
+          tb &&
+          tb.x >= d.bounds.x &&
+          tb.x < d.bounds.x + d.bounds.width &&
+          tb.y >= d.bounds.y - 40 &&
+          tb.y < d.bounds.y + d.bounds.height
+        console.log(
+          `[memoglass] display ${d.id} bounds=${JSON.stringify(d.bounds)} internal=${d.internal}${hit ? '  <-- TRAY IS ON THIS SCREEN' : ''}`
+        )
+      }
     }, 600)
 
     console.log(
