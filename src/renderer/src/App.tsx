@@ -151,6 +151,17 @@ function inferMime(file: File): string {
   return EXT_MIME[ext] ?? 'application/octet-stream'
 }
 
+/** Server-reported attachment `type` is sometimes blank or a generic
+ *  'application/octet-stream' (some upload paths / proxies don't set it
+ *  correctly) — fall back to the filename extension so a saved video/image
+ *  still gets recognized as such instead of falling through to the plain
+ *  file icon. */
+function inferMimeFromFilename(filename: string, type: string): string {
+  if (type && type !== 'application/octet-stream') return type
+  const ext = filename.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_MIME[ext] ?? type ?? 'application/octet-stream'
+}
+
 async function fileToAttachment(file: File): Promise<AttachmentItem> {
   const dataB64 = await fileToBase64(file)
   const mimeType = inferMime(file)
@@ -441,7 +452,7 @@ export default function App(): React.JSX.Element {
         return serverAttachments.map((a) => ({
           id: nextAttachmentId(),
           filename: a.filename,
-          mimeType: a.type,
+          mimeType: inferMimeFromFilename(a.filename, a.type),
           dataB64: '',
           previewUrl: null,
           origin: 'server' as const,
@@ -481,8 +492,9 @@ export default function App(): React.JSX.Element {
       // cases without even asking main; main enforces the same caps
       // authoritatively against the real response headers regardless.
       for (const a of serverAttachments) {
-        const isImage = a.type.startsWith('image/')
-        const isVideo = a.type.startsWith('video/')
+        const mime = inferMimeFromFilename(a.filename, a.type)
+        const isImage = mime.startsWith('image/')
+        const isVideo = mime.startsWith('video/')
         if (!isImage && !isVideo) continue
         const limit = isImage ? MAX_PREVIEW_FETCH_BYTES : MAX_VIDEO_PREVIEW_FETCH_BYTES
         if (a.size > limit) continue
@@ -612,6 +624,9 @@ export default function App(): React.JSX.Element {
 
   const tags = extractTags(content)
   const canSave = (content.trim().length > 0 || attachments.length > 0) && saveState !== 'saving'
+  const videoAttachments = attachments.filter(
+    (a) => a.mimeType.startsWith('video/') && a.previewUrl
+  )
 
   const onDragEnter = (e: React.DragEvent<HTMLDivElement>): void => {
     e.preventDefault()
@@ -858,7 +873,10 @@ function AttachmentChip({
 
   return (
     <div className="attachment-chip">
-      {item.previewUrl ? (
+      {/* Video previewUrls power the full player below the strip, not this
+       *  thumbnail slot — an <img> can't render video bytes, so videos
+       *  always keep the icon tile here as an identity/remove handle. */}
+      {item.previewUrl && !isVideo ? (
         <img src={item.previewUrl} alt={item.filename} className="attachment-thumb" />
       ) : (
         <div className="attachment-icon-tile">
