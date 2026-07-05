@@ -396,10 +396,21 @@ export default function App(): React.JSX.Element {
       setContext(ctx)
       setContextEnabled(true)
     })
+    // The settings window's "服务器" tab saved a new URL/token — re-check
+    // config (updates the dev badge / source) and leave the first-run setup
+    // screen if it was still showing.
+    const offConfig = window.memoglass.onConfigChanged(() => {
+      window.memoglass.getConfig().then((cfg) => {
+        setSource(cfg.source)
+        setView((v) => (v === 'setup' ? 'editor' : v))
+      })
+      void refreshMemoList().then(setMemoList)
+    })
     handle.focus()
     return () => {
       off()
       offContext()
+      offConfig()
     }
   }, [])
 

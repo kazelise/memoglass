@@ -36,6 +36,7 @@ interface StoredConfig {
   tokenB64?: string // safeStorage-encrypted token, base64
   appearance?: Partial<AppearanceConfig>
   panelSize?: Partial<PanelSize>
+  shortcut?: string // custom global-shortcut accelerator, e.g. 'Alt+Space'
 }
 
 const configPath = (): string => join(app.getPath('userData'), 'config.json')
@@ -89,6 +90,13 @@ export function saveConfig(serverUrl: string, token: string): void {
   writeRawConfig({ ...existing, serverUrl: serverUrl.replace(/\/+$/, ''), tokenB64 })
 }
 
+/** Updates just the server URL, keeping whatever token is already stored
+ *  (used when the user edits the URL without re-entering their PAT). */
+export function updateServerUrl(serverUrl: string): void {
+  const existing = readRawConfig()
+  writeRawConfig({ ...existing, serverUrl: serverUrl.replace(/\/+$/, '') })
+}
+
 export function getAppearance(): AppearanceConfig {
   const a = readRawConfig().appearance ?? {}
   return {
@@ -114,4 +122,21 @@ export function getPanelSize(): PanelSize {
 export function setPanelSize(size: PanelSize): void {
   const existing = readRawConfig()
   writeRawConfig({ ...existing, panelSize: size })
+}
+
+/** The user's custom global-shortcut accelerator, if any (undefined = use
+ *  the built-in default candidates in main/index.ts). */
+export function getShortcut(): string | undefined {
+  const raw = readRawConfig().shortcut
+  return typeof raw === 'string' && raw.trim() ? raw : undefined
+}
+
+export function setShortcut(accelerator: string): void {
+  const existing = readRawConfig()
+  writeRawConfig({ ...existing, shortcut: accelerator })
+}
+
+export function clearShortcut(): void {
+  const existing = readRawConfig()
+  writeRawConfig({ ...existing, shortcut: undefined })
 }

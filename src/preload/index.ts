@@ -46,6 +46,17 @@ const api = {
     ipcRenderer.invoke('config:get'),
   setConfig: (serverUrl: string, token: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('config:set', serverUrl, token),
+  setServerUrl: (serverUrl: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('config:setServerUrl', serverUrl),
+  onConfigChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('config:changed', listener)
+    return () => ipcRenderer.removeListener('config:changed', listener)
+  },
+  getShortcut: (): Promise<{ accelerator: string; isCustom: boolean }> =>
+    ipcRenderer.invoke('shortcut:get'),
+  setShortcut: (accelerator: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('shortcut:set', accelerator),
   hidePanel: (): void => ipcRenderer.send('panel:hide'),
   openSettings: (): void => ipcRenderer.send('settings:open'),
   listTags: (): Promise<{ name: string; count: number }[]> => ipcRenderer.invoke('tags:list'),

@@ -15,10 +15,13 @@ import {
   type AppearanceConfig,
   getAppearance,
   getPanelSize,
+  getShortcut,
   resolveConfig,
   saveConfig,
   setAppearance,
-  setPanelSize
+  setPanelSize,
+  setShortcut,
+  updateServerUrl
 } from './config'
 import { captureContext } from './context'
 import { createMemo, listMemos, updateMemo, uploadAttachment, verifyCredentials } from './memos'
@@ -153,7 +156,7 @@ function createSettingsWindow(): void {
 
   settingsWindow = new BrowserWindow({
     width: 480,
-    height: 340,
+    height: 420,
     resizable: false,
     titleBarStyle: 'hiddenInset',
     vibrancy: 'under-window',
@@ -238,7 +241,11 @@ function createTray(): void {
 // ---------- shortcut ----------
 
 function registerShortcut(): void {
-  for (const acc of SHORTCUTS) {
+  const custom = getShortcut()
+  // A user-configured shortcut is tried first; if it's since been claimed by
+  // another app (or is simply unset), we fall back to the built-in defaults.
+  const candidates = custom ? [custom, ...SHORTCUTS.filter((s) => s !== custom)] : SHORTCUTS
+  for (const acc of candidates) {
     try {
       if (globalShortcut.register(acc, togglePanel)) {
         activeShortcut = acc
@@ -250,6 +257,38 @@ function registerShortcut(): void {
     }
   }
   console.warn('[memoglass] no global shortcut could be registered')
+}
+
+/** Attempts to swap the active global shortcut for `accelerator`. Rolls
+ *  back to the previous shortcut if the new one can't be registered (e.g.
+ *  claimed by another app), so the panel never ends up with zero shortcut. */
+function applyShortcut(accelerator: string): { ok: boolean; error?: string } {
+  const previous = activeShortcut
+  if (previous) globalShortcut.unregister(previous)
+  let registered = false
+  try {
+    registered = globalShortcut.register(accelerator, togglePanel)
+  } catch {
+    registered = false
+  }
+  if (!registered) {
+    if (previous) {
+      try {
+        globalShortcut.register(previous, togglePanel)
+      } catch {
+        // best-effort rollback
+      }
+    }
+    return { ok: false, error: '快捷键被占用' }
+  }
+  activeShortcut = accelerator
+  setShortcut(accelerator)
+  return { ok: true }
+}
+
+function broadcastConfigChanged(): void {
+  panel?.webContents.send('config:changed')
+  scheduleBackgroundRefresh(500)
 }
 
 // ---------- ipc ----------
@@ -332,8 +371,29 @@ function registerIpc(): void {
     const check = await verifyCredentials(serverUrl, token)
     if (!check.ok) return check
     saveConfig(serverUrl, token)
+    broadcastConfigChanged()
     return { ok: true }
   })
+
+  // Token-preserving URL edit: verifies the new URL against the already-
+  // stored token so the user isn't forced to re-enter their PAT just to
+  // fix a typo'd hostname.
+  ipcMain.handle('config:setServerUrl', async (_e, serverUrl: string) => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '尚未配置 Token，请先填写完整凭据' }
+    const check = await verifyCredentials(serverUrl, cfg.token)
+    if (!check.ok) return check
+    updateServerUrl(serverUrl)
+    broadcastConfigChanged()
+    return { ok: true }
+  })
+
+  ipcMain.handle('shortcut:get', () => ({
+    accelerator: activeShortcut,
+    isCustom: activeShortcut === getShortcut()
+  }))
+
+  ipcMain.handle('shortcut:set', (_e, accelerator: string) => applyShortcut(accelerator))
 
   ipcMain.on('panel:hide', hidePanel)
   ipcMain.on('settings:open', () => {
