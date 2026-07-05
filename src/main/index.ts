@@ -18,6 +18,7 @@ import {
   saveConfig,
   setAppearance
 } from './config'
+import { captureContext } from './context'
 import { createMemo, listMemos, updateMemo, uploadAttachment, verifyCredentials } from './memos'
 import { getTags, mergeSavedContent, scheduleBackgroundRefresh } from './tags'
 
@@ -99,6 +100,12 @@ function showPanel(): void {
   positionOnActiveScreen()
   panel.show() // panel type -> does not activate the app
   panel.webContents.send('panel:shown')
+  // Non-blocking: the panel opens immediately, context arrives a beat later.
+  // Frontmost app is captured *now* because the panel is a nonactivating
+  // NSPanel — the real app the user was using is still frontmost.
+  captureContext().then((ctx) => {
+    panel?.webContents.send('context:update', ctx)
+  })
 }
 
 function hidePanel(): void {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useGlassEditor } from './editor'
-import type { MemoListItem } from '../../preload/index'
+import type { AppContext, MemoListItem } from '../../preload/index'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
 type View = 'editor' | 'setup' | 'switcher'
@@ -176,6 +176,8 @@ export default function App(): React.JSX.Element {
   const [dragActive, setDragActive] = useState(false)
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
   const [pinned, setPinned] = useState(false)
+  const [context, setContext] = useState<AppContext | null>(null)
+  const [contextEnabled, setContextEnabled] = useState(true)
   const saveStateRef = useRef(saveState)
   saveStateRef.current = saveState
   const dragDepthRef = useRef(0)
@@ -252,8 +254,17 @@ export default function App(): React.JSX.Element {
       }
       if (saveStateRef.current === 'saving') return
       setSaveState('saving')
+      // Context link is a pure addendum — it never affects whether a save
+      // is allowed (canSave stays keyed off trimmed/attachments only), it
+      // just rides along on the content when present + enabled.
+      const browserCtx = contextEnabled ? context?.browser : undefined
+      const finalContent = browserCtx
+        ? trimmed
+          ? `${trimmed}\n\n[${browserCtx.title}](${browserCtx.url})`
+          : `[${browserCtx.title}](${browserCtx.url})`
+        : trimmed
       const res = await window.memoglass.saveMemo({
-        content: trimmed,
+        content: finalContent,
         attachments: attachments.map(({ filename, mimeType, dataB64 }) => ({
           filename,
           mimeType,
@@ -269,6 +280,7 @@ export default function App(): React.JSX.Element {
             prev.forEach(revokePreview)
             return []
           })
+          setContext(null) // avoid stale context leaking into the next memo
           setSaveState('idle')
           window.memoglass.hidePanel()
         }, 450)
@@ -277,7 +289,7 @@ export default function App(): React.JSX.Element {
         setErrorMsg(res.error ?? '保存失败')
       }
     },
-    [attachments, editTarget]
+    [attachments, editTarget, context, contextEnabled]
   )
 
   const openSwitcher = useCallback(() => {
@@ -356,8 +368,18 @@ export default function App(): React.JSX.Element {
       // Pre-warm the switcher cache on every panel show, so ⌘P opens instantly.
       void refreshMemoList().then(setMemoList)
     })
+    // Fired once per panel show, a beat after 'panel:shown' (context capture
+    // is async) — re-enable by default each time so a stale toggle from a
+    // previous memo never silently suppresses the new context.
+    const offContext = window.memoglass.onContextUpdate((ctx) => {
+      setContext(ctx)
+      setContextEnabled(true)
+    })
     handle.focus()
-    return off
+    return () => {
+      off()
+      offContext()
+    }
   }, [])
 
   // ---------- ⌘P switcher keyboard nav ----------
@@ -478,6 +500,16 @@ export default function App(): React.JSX.Element {
 
       <div className="bottom-bar">
         <div className="tags">
+          {context?.browser && !editTarget && (
+            <button
+              type="button"
+              className={`context-chip${contextEnabled ? ' enabled' : ' disabled'}`}
+              title={context.browser.url}
+              onClick={() => setContextEnabled((v) => !v)}
+            >
+              🌐 {truncate(context.browser.title || context.browser.url, 24)}
+            </button>
+          )}
           {tags.map((t) => (
             <span className="tag-pill" key={t}>
               #{t}

@@ -31,6 +31,12 @@ export interface ListMemosResult {
   memos?: MemoListItem[]
 }
 
+export interface AppContext {
+  appName: string
+  bundleId: string
+  browser?: { url: string; title: string }
+}
+
 const api = {
   saveMemo: (payload: SaveMemoPayload): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('memo:save', payload),
@@ -57,6 +63,11 @@ const api = {
     const listener = (_e: unknown, appearance: AppearanceConfig): void => cb(appearance)
     ipcRenderer.on('appearance:changed', listener)
     return () => ipcRenderer.removeListener('appearance:changed', listener)
+  },
+  onContextUpdate: (cb: (ctx: AppContext | null) => void): (() => void) => {
+    const listener = (_e: unknown, ctx: AppContext | null): void => cb(ctx)
+    ipcRenderer.on('context:update', listener)
+    return () => ipcRenderer.removeListener('context:update', listener)
   }
 }
 
