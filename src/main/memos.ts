@@ -246,7 +246,12 @@ export async function updateMemo(
 }
 
 const ATTACHMENT_FETCH_TIMEOUT_MS = 15000
-const MAX_INLINE_ATTACHMENT_BYTES = 4 * 1024 * 1024 // 4MB — bigger than this, show an icon instead
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024 // 4MB — bigger than this, show an icon instead
+// Videos are heavier by nature; cap higher than images but still bounded so a
+// stray multi-hundred-MB screen recording can't be dragged into a single IPC
+// message / base64 blob. Short clips (the common case for a quick-capture
+// note) land comfortably under this.
+const MAX_INLINE_VIDEO_BYTES = 40 * 1024 * 1024 // 40MB
 
 export interface FetchAttachmentResult {
   ok: boolean
@@ -255,10 +260,11 @@ export interface FetchAttachmentResult {
 }
 
 /** Downloads one attachment's bytes and returns them as a `data:` URL for
- *  inline `<img>` preview. Gated to images under 4MB — checked against the
- *  response headers *before* the body is read, so a skip never actually
- *  pulls the full payload over the wire. Videos/big files/anything else
- *  come back as `{ ok:false, error:'skip' }`; callers fall back to an icon
+ *  inline `<img>`/`<video>` preview. Gated by content-type + a per-type size
+ *  cap (images 4MB, videos 40MB) — checked against the response headers
+ *  *before* the body is read, so a skip never actually pulls the full
+ *  payload over the wire. Anything else (other mime types, oversized files)
+ *  comes back as `{ ok:false, error:'skip' }`; callers fall back to an icon
  *  chip and treat this as a normal, non-error outcome. */
 export async function fetchAttachmentData(
   serverUrl: string,
@@ -279,17 +285,17 @@ export async function fetchAttachmentData(
       return { ok: false, error: `HTTP ${res.status}` }
     }
     const contentType = res.headers.get('content-type') ?? ''
+    const isImage = contentType.startsWith('image/')
+    const isVideo = contentType.startsWith('video/')
+    const maxBytes = isImage ? MAX_INLINE_IMAGE_BYTES : MAX_INLINE_VIDEO_BYTES
     const contentLengthHeader = res.headers.get('content-length')
     const contentLength = contentLengthHeader ? Number(contentLengthHeader) : null
-    if (
-      !contentType.startsWith('image/') ||
-      (contentLength !== null && contentLength > MAX_INLINE_ATTACHMENT_BYTES)
-    ) {
+    if ((!isImage && !isVideo) || (contentLength !== null && contentLength > maxBytes)) {
       void res.body?.cancel().catch(() => {})
       return { ok: false, error: 'skip' }
     }
     const buf = Buffer.from(await res.arrayBuffer())
-    if (buf.byteLength > MAX_INLINE_ATTACHMENT_BYTES) {
+    if (buf.byteLength > maxBytes) {
       // content-length was missing or understated — enforce the cap anyway
       return { ok: false, error: 'skip' }
     }

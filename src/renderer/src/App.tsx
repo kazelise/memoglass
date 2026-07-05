@@ -154,7 +154,13 @@ function inferMime(file: File): string {
 async function fileToAttachment(file: File): Promise<AttachmentItem> {
   const dataB64 = await fileToBase64(file)
   const mimeType = inferMime(file)
-  const previewUrl = mimeType.startsWith('image/') ? URL.createObjectURL(file) : null
+  // Images get a real thumbnail; videos get a playable preview too (not just
+  // the ▶ icon) — both are just local blob URLs, cheap and instant since the
+  // bytes are already on disk. Nothing else gets a preview.
+  const previewUrl =
+    mimeType.startsWith('image/') || mimeType.startsWith('video/')
+      ? URL.createObjectURL(file)
+      : null
   return {
     id: nextAttachmentId(),
     filename: file.name || 'file',
@@ -173,10 +179,11 @@ function revokePreview(item: AttachmentItem): void {
 }
 
 /** Max size (bytes) we'll bother asking the main process to fetch a preview
- *  for — matches the server-side cap in fetchAttachmentData; keeping the
- *  same threshold here just avoids a pointless round trip for attachments
+ *  for — matches the server-side caps in fetchAttachmentData; keeping the
+ *  same thresholds here just avoids a pointless round trip for attachments
  *  we already know will be skipped. */
 const MAX_PREVIEW_FETCH_BYTES = 4 * 1024 * 1024
+const MAX_VIDEO_PREVIEW_FETCH_BYTES = 40 * 1024 * 1024
 
 export default function App(): React.JSX.Element {
   const [view, setView] = useState<View>('editor')
@@ -468,13 +475,17 @@ export default function App(): React.JSX.Element {
         }
       })
 
-      // Hydrate real thumbnails asynchronously, one IPC round trip per
-      // attachment. Pre-filter client-side (type/size already known from
-      // the list payload) to skip the obviously-not-going-to-work cases
-      // without even asking main; main enforces the same cap authoritatively
-      // against the real response headers regardless.
+      // Hydrate real thumbnails/players asynchronously, one IPC round trip
+      // per attachment. Pre-filter client-side (type/size already known
+      // from the list payload) to skip the obviously-not-going-to-work
+      // cases without even asking main; main enforces the same caps
+      // authoritatively against the real response headers regardless.
       for (const a of serverAttachments) {
-        if (!a.type.startsWith('image/') || a.size > MAX_PREVIEW_FETCH_BYTES) continue
+        const isImage = a.type.startsWith('image/')
+        const isVideo = a.type.startsWith('video/')
+        if (!isImage && !isVideo) continue
+        const limit = isImage ? MAX_PREVIEW_FETCH_BYTES : MAX_VIDEO_PREVIEW_FETCH_BYTES
+        if (a.size > limit) continue
         window.memoglass.fetchAttachment(a.name, a.filename).then((res) => {
           if (!res.ok || !res.dataUrl) return // skip/failure: stays in icon state
           setAttachments((prev) =>
@@ -678,6 +689,26 @@ export default function App(): React.JSX.Element {
         <div className="attachment-strip">
           {attachments.map((a) => (
             <AttachmentChip key={a.id} item={a} onRemove={() => removeAttachment(a.id)} />
+          ))}
+        </div>
+      )}
+
+      {/* Video attachments get a real inline player here — the strip chip
+       *  above is just an identity/remove control (▶ icon), too small to
+       *  usefully host native <video> controls. Only renders once a preview
+       *  URL is available (hydrated from the server, or a local blob URL
+       *  for a not-yet-saved attachment); oversized server videos that got
+       *  skipped upstream simply never reach this list. */}
+      {videoAttachments.length > 0 && (
+        <div className="attachment-video-previews">
+          {videoAttachments.map((a) => (
+            <video
+              key={a.id}
+              className="attachment-video-preview"
+              src={a.previewUrl!}
+              controls
+              preload="metadata"
+            />
           ))}
         </div>
       )}

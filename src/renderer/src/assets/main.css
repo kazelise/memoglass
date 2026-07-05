@@ -1043,3 +1043,14 @@ body,
 .comment-send-error {
   max-width: none;
 }
+
+/* ---------- settings version footer ---------- */
+
+.settings-version {
+  position: absolute;
+  bottom: 8px;
+  right: 14px;
+  font-size: 10.5px;
+  color: var(--text-3);
+  pointer-events: none;
+}

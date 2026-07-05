@@ -69,6 +69,11 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function SettingsView(): React.JSX.Element {
   const [tab, setTab] = useState<Tab>('appearance')
+  const [version, setVersion] = useState('')
+
+  useEffect(() => {
+    window.memoglass.getVersion().then(setVersion)
+  }, [])
 
   return (
     <div className="settings-view">
@@ -98,6 +103,7 @@ export default function SettingsView(): React.JSX.Element {
       <div className="settings-tab-body" style={{ display: tab === 'shortcut' ? 'flex' : 'none' }}>
         <ShortcutTab />
       </div>
+      {version && <div className="settings-version">memoglass v{version}</div>}
     </div>
   )
 }

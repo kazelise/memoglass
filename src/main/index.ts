@@ -448,6 +448,8 @@ function registerIpc(): void {
     isPinned = pinned
   })
 
+  ipcMain.handle('app:version', () => app.getVersion())
+
   ipcMain.handle('config:get', () => {
     const cfg = resolveConfig()
     return { serverUrl: cfg.serverUrl, configured: cfg.source !== 'none', source: cfg.source }

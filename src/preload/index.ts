@@ -97,6 +97,7 @@ const api = {
     ipcRenderer.invoke('shortcut:set', accelerator),
   hidePanel: (): void => ipcRenderer.send('panel:hide'),
   openSettings: (): void => ipcRenderer.send('settings:open'),
+  getVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
   listTags: (): Promise<{ name: string; count: number }[]> => ipcRenderer.invoke('tags:list'),
   listMemos: (): Promise<ListMemosResult> => ipcRenderer.invoke('memos:list'),
   updateMemo: (
