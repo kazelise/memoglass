@@ -4,6 +4,67 @@
   box-sizing: border-box;
 }
 
+/* ---------- adaptive palette ----------
+   Light: warm ink on bright glass (Warm Parchment lineage).
+   Dark: bright text on HUD glass. Vibrancy follows the system,
+   so text must follow too. */
+
+:root {
+  --text-1: rgba(46, 43, 40, 0.92);
+  --text-2: rgba(64, 58, 52, 0.55);
+  --text-3: rgba(64, 58, 52, 0.38);
+  --accent-text: #356246;
+  --pill-bg: rgba(74, 124, 89, 0.13);
+  --pill-border: rgba(74, 124, 89, 0.3);
+  --btn-bg: rgba(0, 0, 0, 0.05);
+  --btn-border: rgba(0, 0, 0, 0.08);
+  --btn-text-disabled: rgba(60, 55, 50, 0.4);
+  --save-bg: rgba(63, 111, 79, 0.88);
+  --save-bg-hover: rgba(53, 98, 70, 1);
+  --kbd-bg: rgba(255, 255, 255, 0.22);
+  --rim-top: rgba(255, 255, 255, 0.6);
+  --rim-line: rgba(0, 0, 0, 0.07);
+  --error: #b84040;
+  --dev: #8a6d1f;
+  --dev-border: rgba(138, 109, 31, 0.45);
+  --overlay: rgba(255, 255, 255, 0.28);
+  --input-bg: rgba(0, 0, 0, 0.045);
+  --input-border: rgba(0, 0, 0, 0.1);
+  --tooltip-bg: rgba(250, 248, 245, 0.94);
+  --tooltip-border: rgba(0, 0, 0, 0.09);
+  --tooltip-text: rgba(46, 43, 40, 0.88);
+  --tooltip-selected: rgba(74, 124, 89, 0.16);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text-1: rgba(255, 255, 255, 0.92);
+    --text-2: rgba(255, 255, 255, 0.55);
+    --text-3: rgba(255, 255, 255, 0.4);
+    --accent-text: #9fd4b0;
+    --pill-bg: rgba(107, 168, 122, 0.18);
+    --pill-border: rgba(107, 168, 122, 0.35);
+    --btn-bg: rgba(255, 255, 255, 0.08);
+    --btn-border: rgba(255, 255, 255, 0.1);
+    --btn-text-disabled: rgba(255, 255, 255, 0.45);
+    --save-bg: rgba(107, 168, 122, 0.75);
+    --save-bg-hover: rgba(107, 168, 122, 0.9);
+    --kbd-bg: rgba(255, 255, 255, 0.14);
+    --rim-top: rgba(255, 255, 255, 0.18);
+    --rim-line: rgba(255, 255, 255, 0.07);
+    --error: #ff8a8a;
+    --dev: #ffd278;
+    --dev-border: rgba(255, 210, 120, 0.4);
+    --overlay: rgba(0, 0, 0, 0.15);
+    --input-bg: rgba(255, 255, 255, 0.08);
+    --input-border: rgba(255, 255, 255, 0.14);
+    --tooltip-bg: rgba(30, 30, 32, 0.92);
+    --tooltip-border: rgba(255, 255, 255, 0.1);
+    --tooltip-text: rgba(255, 255, 255, 0.85);
+    --tooltip-selected: rgba(107, 168, 122, 0.35);
+  }
+}
+
 html,
 body,
 #root {
@@ -23,8 +84,8 @@ body,
   flex-direction: column;
   padding: 26px 22px 14px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+    inset 0 1px 0 var(--rim-top),
+    inset 0 0 0 1px var(--rim-line);
   border-radius: inherit;
 }
 
@@ -68,9 +129,9 @@ body,
 .tag-pill {
   font-size: 11.5px;
   font-weight: 500;
-  color: #9fd4b0;
-  background: rgba(107, 168, 122, 0.18);
-  border: 0.5px solid rgba(107, 168, 122, 0.35);
+  color: var(--accent-text);
+  background: var(--pill-bg);
+  border: 0.5px solid var(--pill-border);
   padding: 2.5px 9px;
   border-radius: 999px;
   white-space: nowrap;
@@ -85,22 +146,22 @@ body,
 .char-count {
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-3);
 }
 
 .dev-badge {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.4px;
-  color: rgba(255, 210, 120, 0.9);
-  border: 0.5px solid rgba(255, 210, 120, 0.4);
+  color: var(--dev);
+  border: 0.5px solid var(--dev-border);
   padding: 1px 6px;
   border-radius: 4px;
 }
 
 .error-text {
   font-size: 11.5px;
-  color: #ff8a8a;
+  color: var(--error);
   max-width: 260px;
   white-space: nowrap;
   overflow: hidden;
@@ -114,9 +175,9 @@ body,
   font-size: 12.5px;
   font-weight: 500;
   font-family: inherit;
-  color: rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.08);
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  color: var(--btn-text-disabled);
+  background: var(--btn-bg);
+  border: 0.5px solid var(--btn-border);
   padding: 5px 12px;
   border-radius: 999px;
   cursor: default;
@@ -127,20 +188,20 @@ body,
 
 .save-btn.enabled {
   color: #fff;
-  background: rgba(107, 168, 122, 0.75);
-  border-color: rgba(107, 168, 122, 0.5);
+  background: var(--save-bg);
+  border-color: transparent;
   cursor: pointer;
 }
 
 .save-btn.enabled:hover {
-  background: rgba(107, 168, 122, 0.9);
+  background: var(--save-bg-hover);
 }
 
 .save-btn kbd {
   font-family: inherit;
   font-size: 10.5px;
-  opacity: 0.75;
-  background: rgba(255, 255, 255, 0.14);
+  opacity: 0.85;
+  background: var(--kbd-bg);
   padding: 1px 5px;
   border-radius: 4px;
 }
@@ -153,7 +214,7 @@ body,
   display: grid;
   place-items: center;
   border-radius: inherit;
-  background: rgba(0, 0, 0, 0.15);
+  background: var(--overlay);
   animation: fade-in 0.15s ease-out;
 }
 
@@ -166,7 +227,7 @@ body,
   font-size: 30px;
   font-weight: 700;
   color: #fff;
-  background: rgba(107, 168, 122, 0.95);
+  background: rgba(74, 124, 89, 0.95);
   animation: pop-in 0.28s cubic-bezier(0.2, 1.6, 0.4, 1);
 }
 
@@ -201,65 +262,73 @@ body,
 .setup h2 {
   font-size: 16px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
+  color: var(--text-1);
   margin-bottom: 4px;
 }
 
 .setup input {
   font-family: inherit;
   font-size: 13.5px;
-  color: rgba(255, 255, 255, 0.92);
-  background: rgba(255, 255, 255, 0.08);
-  border: 0.5px solid rgba(255, 255, 255, 0.14);
+  color: var(--text-1);
+  background: var(--input-bg);
+  border: 0.5px solid var(--input-border);
   border-radius: 8px;
   padding: 9px 12px;
   outline: none;
 }
 
 .setup input:focus {
-  border-color: rgba(107, 168, 122, 0.6);
+  border-color: var(--pill-border);
 }
 
 .setup input::placeholder {
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--text-3);
 }
 
 .setup .save-btn {
   align-self: flex-end;
 }
 
-/* ---------- editor: hashtag + task-list + autocomplete ---------- */
-
-.cm-hashtag {
-  color: #9fd4b0;
-}
-
-.cm-taskmarker {
-  cursor: pointer;
-}
+/* ---------- CodeMirror autocomplete tooltip (glass style) ---------- */
 
 .cm-tooltip.cm-tooltip-autocomplete {
-  background: rgba(30, 30, 32, 0.92);
+  background: var(--tooltip-bg);
+  -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
-  border: 0.5px solid rgba(255, 255, 255, 0.1);
+  border: 0.5px solid var(--tooltip-border);
   border-radius: 10px;
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.35),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    0 8px 24px rgba(0, 0, 0, 0.18),
+    0 2px 6px rgba(0, 0, 0, 0.1);
   overflow: hidden;
+  padding: 4px;
 }
 
 .cm-tooltip.cm-tooltip-autocomplete > ul {
   font-family: inherit;
+  max-height: 180px;
 }
 
 .cm-tooltip.cm-tooltip-autocomplete > ul > li {
-  padding: 6px 10px;
+  padding: 5px 10px;
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--tooltip-text);
+  border-radius: 6px;
+  line-height: 1.4;
 }
 
 .cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
-  background: rgba(107, 168, 122, 0.35);
-  color: #fff;
+  background: var(--tooltip-selected);
+  color: var(--tooltip-text);
+}
+
+/* hashtag inline color (light theme fallback; editor theme also sets it) */
+.cm-hashtag {
+  color: var(--accent-text);
+}
+
+/* clickable task checkboxes */
+.cm-taskmarker,
+.cm-task-bracket {
+  cursor: pointer;
 }

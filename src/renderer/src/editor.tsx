@@ -9,7 +9,7 @@ import {
   ViewPlugin,
   type ViewUpdate
 } from '@codemirror/view'
-import { EditorSelection, EditorState, Prec, RangeSetBuilder } from '@codemirror/state'
+import { Compartment, EditorSelection, EditorState, Prec, RangeSetBuilder } from '@codemirror/state'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
 import { syntaxHighlighting, HighlightStyle } from '@codemirror/language'
@@ -20,59 +20,106 @@ import {
   type CompletionResult
 } from '@codemirror/autocomplete'
 
-/** Markdown highlighting tuned for text sitting on dark HUD glass. */
-const glassHighlight = HighlightStyle.define([
-  { tag: tags.heading, fontWeight: '700', color: 'rgba(255,255,255,0.96)' },
-  { tag: tags.strong, fontWeight: '700' },
-  { tag: tags.emphasis, fontStyle: 'italic' },
-  { tag: tags.strikethrough, textDecoration: 'line-through', opacity: '0.6' },
-  {
-    tag: tags.monospace,
-    fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
-    fontSize: '13px',
-    backgroundColor: 'rgba(255,255,255,0.10)',
-    borderRadius: '4px',
-    padding: '1px 4px'
-  },
-  { tag: [tags.link, tags.url], color: '#8ec9a0', textDecoration: 'underline' },
-  { tag: tags.quote, color: 'rgba(255,255,255,0.55)', fontStyle: 'italic' },
-  { tag: tags.processingInstruction, color: 'rgba(255,255,255,0.40)' },
-  { tag: tags.meta, color: 'rgba(255,255,255,0.40)' },
-  { tag: tags.contentSeparator, color: 'rgba(255,255,255,0.35)' },
-  // List bullets/numbers and task-list markers ("- [ ]"/"- [x]") aren't
-  // explicitly styled elsewhere; both default to tags.list/tags.atom which
-  // fall back to the base .cm-content color (rgba(255,255,255,0.92)) when
-  // unmatched — already readable on the glass background, kept explicit
-  // here so the mapping doesn't silently drift if the grammar changes.
-  { tag: tags.list, color: 'rgba(255,255,255,0.92)' },
-  { tag: tags.atom, color: 'rgba(255,255,255,0.92)' }
-])
+/** Adaptive palette: vibrancy glass follows the system appearance, so the
+ *  editor colors must follow too. Light = warm ink (Warm Parchment lineage),
+ *  dark = bright text on HUD glass. */
+interface GlassPalette {
+  text: string
+  heading: string
+  faint: string
+  marker: string
+  quote: string
+  codeBg: string
+  link: string
+  cursor: string
+  selection: string
+  placeholder: string
+}
 
-const glassTheme = EditorView.theme(
-  {
-    '&': {
-      backgroundColor: 'transparent',
-      color: 'rgba(255,255,255,0.92)',
-      fontSize: '15px',
-      height: '100%'
+const LIGHT: GlassPalette = {
+  text: 'rgba(46,43,40,0.90)',
+  heading: 'rgba(30,28,26,0.96)',
+  faint: 'rgba(64,58,52,0.35)',
+  marker: 'rgba(64,58,52,0.40)',
+  quote: 'rgba(64,58,52,0.60)',
+  codeBg: 'rgba(0,0,0,0.06)',
+  link: '#356246',
+  cursor: '#2e2b28',
+  selection: 'rgba(74,124,89,0.22)',
+  placeholder: 'rgba(64,58,52,0.35)'
+}
+
+const DARK: GlassPalette = {
+  text: 'rgba(255,255,255,0.92)',
+  heading: 'rgba(255,255,255,0.96)',
+  faint: 'rgba(255,255,255,0.35)',
+  marker: 'rgba(255,255,255,0.40)',
+  quote: 'rgba(255,255,255,0.55)',
+  codeBg: 'rgba(255,255,255,0.10)',
+  link: '#8ec9a0',
+  cursor: '#ffffff',
+  selection: 'rgba(107,168,122,0.35)',
+  placeholder: 'rgba(255,255,255,0.35)'
+}
+
+function makeHighlight(p: GlassPalette): HighlightStyle {
+  return HighlightStyle.define([
+    { tag: tags.heading, fontWeight: '700', color: p.heading },
+    { tag: tags.strong, fontWeight: '700' },
+    { tag: tags.emphasis, fontStyle: 'italic' },
+    { tag: tags.strikethrough, textDecoration: 'line-through', opacity: '0.6' },
+    {
+      tag: tags.monospace,
+      fontFamily: '"SF Mono", ui-monospace, Menlo, monospace',
+      fontSize: '13px',
+      backgroundColor: p.codeBg,
+      borderRadius: '4px',
+      padding: '1px 4px'
     },
-    '.cm-content': {
-      caretColor: '#fff',
-      lineHeight: '1.65',
-      padding: '0',
-      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
+    { tag: [tags.link, tags.url], color: p.link, textDecoration: 'underline' },
+    { tag: tags.quote, color: p.quote, fontStyle: 'italic' },
+    { tag: tags.processingInstruction, color: p.marker },
+    { tag: tags.meta, color: p.marker },
+    { tag: tags.contentSeparator, color: p.faint },
+    { tag: tags.list, color: p.text },
+    { tag: tags.atom, color: p.text }
+  ])
+}
+
+function makeTheme(p: GlassPalette, dark: boolean): ReturnType<typeof EditorView.theme> {
+  return EditorView.theme(
+    {
+      '&': {
+        backgroundColor: 'transparent',
+        color: p.text,
+        fontSize: '15px',
+        height: '100%'
+      },
+      '.cm-content': {
+        caretColor: p.cursor,
+        lineHeight: '1.65',
+        padding: '0',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
+      },
+      '.cm-line': { padding: '0 2px' },
+      '&.cm-focused': { outline: 'none' },
+      '.cm-cursor': { borderLeftColor: p.cursor, borderLeftWidth: '2px' },
+      '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
+        backgroundColor: `${p.selection} !important`
+      },
+      '.cm-placeholder': { color: p.placeholder },
+      '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit' }
     },
-    '.cm-line': { padding: '0 2px' },
-    '&.cm-focused': { outline: 'none' },
-    '.cm-cursor': { borderLeftColor: '#fff', borderLeftWidth: '2px' },
-    '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': {
-      backgroundColor: 'rgba(107,168,122,0.35) !important'
-    },
-    '.cm-placeholder': { color: 'rgba(255,255,255,0.35)' },
-    '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit' }
-  },
-  { dark: true }
-)
+    { dark }
+  )
+}
+
+const themeCompartment = new Compartment()
+
+function glassAppearance(dark: boolean): ReturnType<typeof EditorView.theme>[] {
+  const p = dark ? DARK : LIGHT
+  return [makeTheme(p, dark), syntaxHighlighting(makeHighlight(p))]
+}
 
 // ---------- hashtag autocomplete ----------
 
@@ -277,6 +324,7 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
 
     refreshTagCache()
     const offShown = window.memoglass.onShown(() => refreshTagCache())
+    const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
     const view = new EditorView({
       state: EditorState.create({
@@ -284,8 +332,7 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
         extensions: [
           history(),
           markdown({ base: markdownLanguage }), // addKeymap defaults true → Enter continues lists/tasks (incl. exit-on-empty-item)
-          syntaxHighlighting(glassHighlight),
-          glassTheme,
+          themeCompartment.of(glassAppearance(darkMq.matches)),
           placeholder('随手记点什么… 支持 Markdown 和 #标签'),
           EditorView.lineWrapping,
           hashtagColorPlugin,
@@ -324,8 +371,15 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
       parent: containerRef.current
     })
     viewRef.current = view
+
+    const onSchemeChange = (e: MediaQueryListEvent): void => {
+      view.dispatch({ effects: themeCompartment.reconfigure(glassAppearance(e.matches)) })
+    }
+    darkMq.addEventListener('change', onSchemeChange)
+
     return () => {
       offShown()
+      darkMq.removeEventListener('change', onSchemeChange)
       view.destroy()
       viewRef.current = null
     }

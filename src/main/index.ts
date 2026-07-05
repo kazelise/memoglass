@@ -1,4 +1,13 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, nativeImage, screen, Tray } from 'electron'
+import {
+  app,
+  BrowserWindow,
+  globalShortcut,
+  ipcMain,
+  Menu,
+  nativeImage,
+  screen,
+  Tray
+} from 'electron'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { join } from 'path'
 import { resolveConfig, saveConfig } from './config'
@@ -84,11 +93,39 @@ function togglePanel(): void {
 
 // ---------- tray ----------
 
+// Vibrancy materials for live A/B testing via the tray menu; the winner gets
+// hard-coded once picked.
+const MATERIALS = ['hud', 'popover', 'under-window', 'sidebar', 'menu', 'window'] as const
+let currentMaterial: (typeof MATERIALS)[number] = 'hud'
+
+function trayMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: '打开 memoglass', click: showPanel },
+    { type: 'separator' },
+    {
+      label: `玻璃材质（当前 ${currentMaterial}）`,
+      submenu: MATERIALS.map((m) => ({
+        label: m,
+        type: 'radio' as const,
+        checked: m === currentMaterial,
+        click: (): void => {
+          currentMaterial = m
+          panel?.setVibrancy(m)
+          showPanel()
+        }
+      }))
+    },
+    { type: 'separator' },
+    { label: '退出', role: 'quit' }
+  ])
+}
+
 function createTray(): void {
   tray = new Tray(nativeImage.createEmpty())
   tray.setTitle('✎') // text-only menu bar item; proper template icon later
   tray.setToolTip('memoglass')
   tray.on('click', togglePanel)
+  tray.on('right-click', () => tray?.popUpContextMenu(trayMenu()))
 }
 
 // ---------- shortcut ----------
