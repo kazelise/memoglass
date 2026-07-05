@@ -121,9 +121,37 @@ function fileToBase64(file: File): Promise<string> {
   })
 }
 
+// Files dragged from apps like CleanShot arrive via file promises with an
+// empty `type`; infer from the extension so images still get thumbnails.
+const EXT_MIME: Record<string, string> = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  heic: 'image/heic',
+  heif: 'image/heif',
+  bmp: 'image/bmp',
+  svg: 'image/svg+xml',
+  tiff: 'image/tiff',
+  tif: 'image/tiff',
+  avif: 'image/avif',
+  mp4: 'video/mp4',
+  mov: 'video/quicktime',
+  m4v: 'video/x-m4v',
+  webm: 'video/webm',
+  mkv: 'video/x-matroska'
+}
+
+function inferMime(file: File): string {
+  if (file.type) return file.type
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_MIME[ext] ?? 'application/octet-stream'
+}
+
 async function fileToAttachment(file: File): Promise<AttachmentItem> {
   const dataB64 = await fileToBase64(file)
-  const mimeType = file.type || 'application/octet-stream'
+  const mimeType = inferMime(file)
   const previewUrl = mimeType.startsWith('image/') ? URL.createObjectURL(file) : null
   return {
     id: nextAttachmentId(),
