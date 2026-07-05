@@ -291,14 +291,33 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('dev.zhijie.memoglass')
-    if (process.platform === 'darwin') app.dock?.hide() // accessory: no Dock icon, no Cmd-Tab
 
     registerIpc()
-    createPanel()
+    // Create the tray BEFORE flipping to accessory: switching the activation
+    // policy (dock.hide) while a status item is being created can eat the
+    // item permanently on macOS (known Electron quirk).
     createTray()
+    createPanel()
     registerShortcut()
     scheduleBackgroundRefresh()
-    console.log('[memoglass] ready; shortcut =', activeShortcut || 'NONE')
+
+    setTimeout(() => {
+      if (process.platform === 'darwin') app.dock?.hide() // accessory: no Dock icon, no Cmd-Tab
+      // bounds with a real x/width = the system actually placed the icon
+      console.log(
+        '[memoglass] tray after dock.hide — destroyed:',
+        tray?.isDestroyed(),
+        'bounds:',
+        JSON.stringify(tray?.getBounds())
+      )
+    }, 600)
+
+    console.log(
+      '[memoglass] ready; shortcut =',
+      activeShortcut || 'NONE',
+      '| tray bounds:',
+      JSON.stringify(tray?.getBounds())
+    )
   })
 
   // Menu-bar app: never quit when windows are hidden/closed
