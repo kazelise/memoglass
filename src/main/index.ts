@@ -217,7 +217,7 @@ function createTrayIcon(): NativeImage {
 }
 
 function trayMenu(): Menu {
-  return Menu.buildFromTemplate([
+  const template: Electron.MenuItemConstructorOptions[] = [
     { label: '打开 memoglass', click: showPanel },
     { type: 'separator' },
     { label: '设置…', click: createSettingsWindow },
@@ -234,10 +234,28 @@ function trayMenu(): Menu {
           showPanel()
         }
       }))
-    },
-    { type: 'separator' },
-    { label: '退出', role: 'quit' }
-  ])
+    }
+  ]
+
+  // Only meaningful in a packaged app — in dev mode this would point macOS
+  // at the bare `electron` binary, which is useless as a login item.
+  if (app.isPackaged) {
+    template.push(
+      { type: 'separator' },
+      {
+        label: '登录时启动',
+        type: 'checkbox',
+        checked: app.getLoginItemSettings().openAtLogin,
+        click: (menuItem): void => {
+          app.setLoginItemSettings({ openAtLogin: menuItem.checked })
+        }
+      }
+    )
+  }
+
+  template.push({ type: 'separator' }, { label: '退出', role: 'quit' })
+
+  return Menu.buildFromTemplate(template)
 }
 
 function createTray(): void {
@@ -514,30 +532,40 @@ if (!gotLock) {
     }
     startAutoRetry()
 
-    setTimeout(() => {
-      if (process.platform === 'darwin') app.dock?.hide() // accessory: no Dock icon, no Cmd-Tab
-      // bounds with a real x/width = the system actually placed the icon
-      const tb = tray?.getBounds()
-      console.log(
-        '[memoglass] tray after dock.hide — destroyed:',
-        tray?.isDestroyed(),
-        'bounds:',
-        JSON.stringify(tb)
-      )
-      // Map the tray icon to a physical display so we can tell the user
-      // exactly which screen's menu bar it landed on.
-      for (const d of screen.getAllDisplays()) {
-        const hit =
-          tb &&
-          tb.x >= d.bounds.x &&
-          tb.x < d.bounds.x + d.bounds.width &&
-          tb.y >= d.bounds.y - 40 &&
-          tb.y < d.bounds.y + d.bounds.height
+    // Two ways to become an accessory app (no Dock icon, no Cmd-Tab entry):
+    // packaged builds set LSUIElement in Info.plist (see electron-builder.yml
+    // mac.extendInfo), so the app is accessory from the very first frame and
+    // never needs this at all. In dev (`electron-vite dev`, running the
+    // plain Electron binary with no custom Info.plist) we instead flip the
+    // activation policy at runtime via app.dock.hide() — delayed and run
+    // after createTray() because switching policy while a status item is
+    // still being created can make macOS eat it permanently.
+    if (!app.isPackaged && process.platform === 'darwin') {
+      setTimeout(() => {
+        app.dock?.hide()
+        // bounds with a real x/width = the system actually placed the icon
+        const tb = tray?.getBounds()
         console.log(
-          `[memoglass] display ${d.id} bounds=${JSON.stringify(d.bounds)} internal=${d.internal}${hit ? '  <-- TRAY IS ON THIS SCREEN' : ''}`
+          '[memoglass] tray after dock.hide — destroyed:',
+          tray?.isDestroyed(),
+          'bounds:',
+          JSON.stringify(tb)
         )
-      }
-    }, 600)
+        // Map the tray icon to a physical display so we can tell the user
+        // exactly which screen's menu bar it landed on.
+        for (const d of screen.getAllDisplays()) {
+          const hit =
+            tb &&
+            tb.x >= d.bounds.x &&
+            tb.x < d.bounds.x + d.bounds.width &&
+            tb.y >= d.bounds.y - 40 &&
+            tb.y < d.bounds.y + d.bounds.height
+          console.log(
+            `[memoglass] display ${d.id} bounds=${JSON.stringify(d.bounds)} internal=${d.internal}${hit ? '  <-- TRAY IS ON THIS SCREEN' : ''}`
+          )
+        }
+      }, 600)
+    }
 
     console.log(
       '[memoglass] ready; shortcut =',

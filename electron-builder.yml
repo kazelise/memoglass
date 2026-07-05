@@ -1,4 +1,4 @@
-appId: com.electron.app
+appId: dev.zhijie.memoglass
 productName: memoglass
 directories:
   buildResources: build
@@ -11,16 +11,22 @@ files:
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 asarUnpack:
   - resources/**
-win:
-  executableName: memoglass
-nsis:
-  artifactName: ${name}-${version}-setup.${ext}
-  shortcutName: ${productName}
-  uninstallDisplayName: ${productName}
-  createDesktopShortcut: always
 mac:
+  target:
+    - target: dmg
+      arch:
+        - arm64
+  icon: build/icon.png
+  # Force an unsigned build. Without this, electron-builder auto-discovers
+  # any local codesigning identity in the keychain (e.g. a personal Apple
+  # Development cert from Xcode) and signs with it — which is *not* the
+  # same as a Developer ID distribution signature, doesn't pass Gatekeeper
+  # on other machines, and contradicts the "unsigned" story in the README.
+  identity: null
+  category: public.app-category.productivity
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
+    - LSUIElement: true
     - NSCameraUsageDescription: Application requests access to the device's camera.
     - NSMicrophoneUsageDescription: Application requests access to the device's microphone.
     - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
@@ -28,16 +34,4 @@ mac:
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
-linux:
-  target:
-    - AppImage
-    - snap
-    - deb
-  maintainer: electronjs.org
-  category: Utility
-appImage:
-  artifactName: ${name}-${version}.${ext}
 npmRebuild: false
-publish:
-  provider: generic
-  url: https://example.com/auto-updates
