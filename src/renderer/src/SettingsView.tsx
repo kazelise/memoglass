@@ -28,6 +28,7 @@ const FONT_OPTIONS: { label: string; value: string }[] = [
 
 const CJK_FONT_OPTIONS: { label: string; value: string }[] = [
   { label: '跟随主字体', value: 'system' },
+  { label: 'Hannotate SC（手札体）', value: 'Hannotate SC' },
   { label: 'LXGW WenKai', value: 'LXGW WenKai' },
   { label: 'PingFang SC', value: 'PingFang SC' },
   { label: 'Songti SC', value: 'Songti SC' },
@@ -115,6 +116,8 @@ function AppearanceTab(): React.JSX.Element {
   const [loaded, setLoaded] = useState(false)
   const [customMode, setCustomMode] = useState(false)
   const [customText, setCustomText] = useState('')
+  const [cjkCustomMode, setCjkCustomMode] = useState(false)
+  const [cjkCustomText, setCjkCustomText] = useState('')
 
   useEffect(() => {
     window.memoglass.getAppearance().then((a) => {
@@ -123,6 +126,11 @@ function AppearanceTab(): React.JSX.Element {
       if (!known) {
         setCustomMode(true)
         setCustomText(a.fontFamily)
+      }
+      const cjkKnown = CJK_FONT_OPTIONS.some((f) => f.value === a.cjkFontFamily)
+      if (!cjkKnown) {
+        setCjkCustomMode(true)
+        setCjkCustomText(a.cjkFontFamily)
       }
       setLoaded(true)
     })
@@ -185,8 +193,16 @@ function AppearanceTab(): React.JSX.Element {
         <label>中文字体</label>
         <div className="settings-field">
           <select
-            value={appearance.cjkFontFamily}
-            onChange={(e) => apply({ ...appearance, cjkFontFamily: e.target.value })}
+            value={cjkCustomMode ? CUSTOM_VALUE : appearance.cjkFontFamily}
+            onChange={(e) => {
+              const v = e.target.value
+              if (v === CUSTOM_VALUE) {
+                setCjkCustomMode(true)
+                return
+              }
+              setCjkCustomMode(false)
+              apply({ ...appearance, cjkFontFamily: v })
+            }}
           >
             {CJK_FONT_OPTIONS.map((f) => {
               const available = f.value === 'system' || isFontAvailable(f.value)
@@ -197,7 +213,19 @@ function AppearanceTab(): React.JSX.Element {
                 </option>
               )
             })}
+            <option value={CUSTOM_VALUE}>自定义…</option>
           </select>
+          {cjkCustomMode && (
+            <input
+              className="settings-custom-font"
+              placeholder="中文字体名称"
+              value={cjkCustomText}
+              onChange={(e) => {
+                setCjkCustomText(e.target.value)
+                apply({ ...appearance, cjkFontFamily: e.target.value || 'system' })
+              }}
+            />
+          )}
         </div>
       </div>
 
