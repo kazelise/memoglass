@@ -17,12 +17,31 @@ export interface SaveMemoPayload {
   attachments: AttachmentUpload[]
 }
 
+export interface MemoAttachment {
+  name: string // "attachments/xxx"
+  filename: string
+  type: string
+  size: number
+}
+
 export interface MemoListItem {
   name: string
   content: string
   updateTime: string
   tags?: string[]
   pinned?: boolean
+  attachments?: MemoAttachment[]
+}
+
+export interface UpdateMemoPayload {
+  keepAttachmentNames: string[]
+  newAttachments: AttachmentUpload[]
+}
+
+export interface FetchAttachmentResult {
+  ok: boolean
+  dataUrl?: string
+  error?: string
 }
 
 export interface ListMemosResult {
@@ -61,8 +80,14 @@ const api = {
   openSettings: (): void => ipcRenderer.send('settings:open'),
   listTags: (): Promise<{ name: string; count: number }[]> => ipcRenderer.invoke('tags:list'),
   listMemos: (): Promise<ListMemosResult> => ipcRenderer.invoke('memos:list'),
-  updateMemo: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('memo:update', name, content),
+  updateMemo: (
+    name: string,
+    content: string,
+    payload: UpdateMemoPayload
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('memo:update', name, content, payload),
+  fetchAttachment: (name: string, filename: string): Promise<FetchAttachmentResult> =>
+    ipcRenderer.invoke('attachment:fetch', name, filename),
   setPinned: (pinned: boolean): void => ipcRenderer.send('panel:setPinned', pinned),
   onShown: (cb: () => void): (() => void) => {
     const listener = (): void => cb()

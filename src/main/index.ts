@@ -24,7 +24,14 @@ import {
   updateServerUrl
 } from './config'
 import { captureContext } from './context'
-import { createMemo, listMemos, updateMemo, uploadAttachment, verifyCredentials } from './memos'
+import {
+  createMemo,
+  fetchAttachmentData,
+  listMemos,
+  updateMemoWithAttachments,
+  uploadAttachment,
+  verifyCredentials
+} from './memos'
 import {
   enqueue,
   flushQueue,
@@ -347,15 +354,62 @@ function registerIpc(): void {
     return listMemos(cfg.serverUrl, cfg.token)
   })
 
-  ipcMain.handle('memo:update', async (_e, name: string, content: string) => {
+  ipcMain.handle(
+    'memo:update',
+    async (
+      _e,
+      name: string,
+      content: string,
+      payload: { keepAttachmentNames: string[]; newAttachments: AttachmentUpload[] }
+    ) => {
+      const cfg = resolveConfig()
+      if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+
+      const { keepAttachmentNames, newAttachments } = payload
+
+      for (const file of newAttachments) {
+        const bytes = Buffer.byteLength(file.dataB64, 'base64')
+        if (bytes > MAX_ATTACHMENT_BYTES) {
+          return { ok: false, error: `文件过大：${file.filename}` }
+        }
+      }
+
+      const uploadedNames: string[] = []
+      for (const file of newAttachments) {
+        const uploaded = await uploadAttachment(cfg.serverUrl, cfg.token, file)
+        if (!uploaded.ok || !uploaded.name) {
+          // Editing an existing memo never queues offline — unlike the
+          // create path there's no local "draft" concept to fall back to,
+          // and silently pretending success would desync the editor state
+          // from what the server actually has.
+          return {
+            ok: false,
+            error: `附件上传失败（${file.filename}）：${uploaded.error ?? '未知错误'}`
+          }
+        }
+        uploadedNames.push(uploaded.name)
+      }
+
+      const allAttachmentNames = [...keepAttachmentNames, ...uploadedNames]
+      const result = await updateMemoWithAttachments(
+        cfg.serverUrl,
+        cfg.token,
+        name,
+        content,
+        allAttachmentNames
+      )
+      if (result.ok) {
+        mergeSavedContent(content)
+        scheduleBackgroundRefresh(3000)
+      }
+      return result
+    }
+  )
+
+  ipcMain.handle('attachment:fetch', async (_e, name: string, filename: string) => {
     const cfg = resolveConfig()
     if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
-    const result = await updateMemo(cfg.serverUrl, cfg.token, name, content)
-    if (result.ok) {
-      mergeSavedContent(content)
-      scheduleBackgroundRefresh(3000)
-    }
-    return result
+    return fetchAttachmentData(cfg.serverUrl, cfg.token, name, filename)
   })
 
   ipcMain.on('panel:setPinned', (_e, pinned: boolean) => {

@@ -92,8 +92,10 @@ interface AttachmentItem {
   id: string
   filename: string
   mimeType: string
-  dataB64: string
-  previewUrl: string | null // objectURL, only set for images
+  dataB64: string // '' for server-origin items — they're not re-uploaded
+  previewUrl: string | null // local: objectURL; server: data: URL once fetched, else null
+  origin: 'local' | 'server'
+  serverName?: string // "attachments/xxx" — only set for origin === 'server'
 }
 
 let attachmentSeq = 0
@@ -158,13 +160,23 @@ async function fileToAttachment(file: File): Promise<AttachmentItem> {
     filename: file.name || 'file',
     mimeType,
     dataB64,
-    previewUrl
+    previewUrl,
+    origin: 'local'
   }
 }
 
+/** Only local items own an objectURL that needs releasing — server items'
+ *  previewUrl (when set) is a `data:` URL fetched over IPC, nothing to
+ *  revoke. */
 function revokePreview(item: AttachmentItem): void {
-  if (item.previewUrl) URL.revokeObjectURL(item.previewUrl)
+  if (item.origin === 'local' && item.previewUrl) URL.revokeObjectURL(item.previewUrl)
 }
+
+/** Max size (bytes) we'll bother asking the main process to fetch a preview
+ *  for — matches the server-side cap in fetchAttachmentData; keeping the
+ *  same threshold here just avoids a pointless round trip for attachments
+ *  we already know will be skipped. */
+const MAX_PREVIEW_FETCH_BYTES = 4 * 1024 * 1024
 
 export default function App(): React.JSX.Element {
   const [view, setView] = useState<View>('editor')
@@ -179,8 +191,14 @@ export default function App(): React.JSX.Element {
   const [context, setContext] = useState<AppContext | null>(null)
   const [contextEnabled, setContextEnabled] = useState(true)
   const [pendingCount, setPendingCount] = useState(0)
+  // Server-origin attachments the user removed from the strip during this
+  // edit session — not yet deleted, just staged; surfaced in the edit
+  // banner so the (irreversible) cascade delete on save isn't a surprise.
+  const [removedServerCount, setRemovedServerCount] = useState(0)
   const saveStateRef = useRef(saveState)
   saveStateRef.current = saveState
+  const attachmentsRef = useRef<AttachmentItem[]>(attachments)
+  attachmentsRef.current = attachments
   const dragDepthRef = useRef(0)
 
   // ---------- ⌘P switcher state ----------
@@ -208,11 +226,12 @@ export default function App(): React.JSX.Element {
   }, [])
 
   const removeAttachment = useCallback((id: string) => {
-    setAttachments((prev) => {
-      const found = prev.find((a) => a.id === id)
-      if (found) revokePreview(found)
-      return prev.filter((a) => a.id !== id)
-    })
+    const found = attachmentsRef.current.find((a) => a.id === id)
+    if (found) {
+      revokePreview(found)
+      if (found.origin === 'server') setRemovedServerCount((c) => c + 1)
+    }
+    setAttachments((prev) => prev.filter((a) => a.id !== id))
   }, [])
 
   const doSave = useCallback(
@@ -225,20 +244,29 @@ export default function App(): React.JSX.Element {
           window.memoglass.hidePanel()
           return
         }
-        if (hasAttachments) {
-          setSaveState('error')
-          setErrorMsg('编辑模式暂不支持新增附件')
-          return
-        }
         if (saveStateRef.current === 'saving') return
         setSaveState('saving')
-        const res = await window.memoglass.updateMemo(editTarget.name, trimmed)
+        const keepAttachmentNames = attachments
+          .filter((a) => a.origin === 'server' && a.serverName)
+          .map((a) => a.serverName as string)
+        const newAttachments = attachments
+          .filter((a) => a.origin === 'local')
+          .map(({ filename, mimeType, dataB64 }) => ({ filename, mimeType, dataB64 }))
+        const res = await window.memoglass.updateMemo(editTarget.name, trimmed, {
+          keepAttachmentNames,
+          newAttachments
+        })
         if (res.ok) {
           setSaveState('saved')
           setTimeout(() => {
             handle.clear()
             setContent('')
             setEditTarget(null)
+            setAttachments((prev) => {
+              prev.forEach(revokePreview)
+              return []
+            })
+            setRemovedServerCount(0)
             setSaveState('idle')
             window.memoglass.hidePanel()
           }, 450)
@@ -322,6 +350,7 @@ export default function App(): React.JSX.Element {
       prev.forEach(revokePreview)
       return []
     })
+    setRemovedServerCount(0)
     setView('editor')
     setTimeout(() => handle.focus(), 30)
   }, [handle])
@@ -334,6 +363,7 @@ export default function App(): React.JSX.Element {
       prev.forEach(revokePreview)
       return []
     })
+    setRemovedServerCount(0)
     handle.focus()
   }, [handle])
 
@@ -342,13 +372,38 @@ export default function App(): React.JSX.Element {
       handle.setContent(memo.content)
       setContent(memo.content)
       setEditTarget({ name: memo.name, updateTime: memo.updateTime })
+      const serverAttachments = memo.attachments ?? []
       setAttachments((prev) => {
         prev.forEach(revokePreview)
-        return []
+        return serverAttachments.map((a) => ({
+          id: nextAttachmentId(),
+          filename: a.filename,
+          mimeType: a.type,
+          dataB64: '',
+          previewUrl: null,
+          origin: 'server' as const,
+          serverName: a.name
+        }))
       })
+      setRemovedServerCount(0)
       if (saveStateRef.current === 'error') setSaveState('idle')
       setView('editor')
       setTimeout(() => handle.focus(), 30)
+
+      // Hydrate real thumbnails asynchronously, one IPC round trip per
+      // attachment. Pre-filter client-side (type/size already known from
+      // the list payload) to skip the obviously-not-going-to-work cases
+      // without even asking main; main enforces the same cap authoritatively
+      // against the real response headers regardless.
+      for (const a of serverAttachments) {
+        if (!a.type.startsWith('image/') || a.size > MAX_PREVIEW_FETCH_BYTES) continue
+        window.memoglass.fetchAttachment(a.name, a.filename).then((res) => {
+          if (!res.ok || !res.dataUrl) return // skip/failure: stays in icon state
+          setAttachments((prev) =>
+            prev.map((p) => (p.serverName === a.name ? { ...p, previewUrl: res.dataUrl! } : p))
+          )
+        })
+      }
     },
     [handle]
   )
@@ -524,6 +579,9 @@ export default function App(): React.JSX.Element {
         <div className="edit-banner">
           <span>
             正在编辑 · {formatRelative(editTarget.updateTime)} <kbd>⌘↩</kbd> 保存更新
+            {removedServerCount > 0 && (
+              <span className="edit-banner-warn">（保存将删除 {removedServerCount} 个附件）</span>
+            )}
           </span>
           <button className="edit-banner-cancel" onClick={cancelEdit}>
             取消
