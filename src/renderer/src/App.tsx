@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useGlassEditor } from './editor'
 import type { AppContext, MemoListItem } from '../../preload/index'
 
-type SaveState = 'idle' | 'saving' | 'saved' | 'error'
+type SaveState = 'idle' | 'saving' | 'saved' | 'queued' | 'error'
 type View = 'editor' | 'setup' | 'switcher'
 
 interface EditTarget {
@@ -178,6 +178,7 @@ export default function App(): React.JSX.Element {
   const [pinned, setPinned] = useState(false)
   const [context, setContext] = useState<AppContext | null>(null)
   const [contextEnabled, setContextEnabled] = useState(true)
+  const [pendingCount, setPendingCount] = useState(0)
   const saveStateRef = useRef(saveState)
   saveStateRef.current = saveState
   const dragDepthRef = useRef(0)
@@ -272,7 +273,10 @@ export default function App(): React.JSX.Element {
         }))
       })
       if (res.ok) {
-        setSaveState('saved')
+        // Offline queue: the memo is safely persisted locally and will sync
+        // automatically, but it hasn't actually reached the server yet — a
+        // distinct badge (vs. the checkmark) keeps that honest.
+        setSaveState(res.queued ? 'queued' : 'saved')
         setTimeout(() => {
           handle.clear()
           setContent('')
@@ -396,6 +400,22 @@ export default function App(): React.JSX.Element {
     return () => {
       off()
       offContext()
+    }
+  }, [])
+
+  // Offline queue indicator: seed from the current count on mount, then
+  // stay live via push events (enqueue/dequeue happen entirely in main).
+  useEffect(() => {
+    window.memoglass.getQueueCount().then(setPendingCount)
+    const offQueue = window.memoglass.onQueueChanged(setPendingCount)
+    const offQueueFailed = window.memoglass.onQueueItemFailed((error) => {
+      // Poison-pill drop: the item was undeliverable (server rejected it)
+      // and got removed from the queue rather than retried forever.
+      console.warn('[memoglass] a queued memo could not be delivered and was dropped:', error)
+    })
+    return () => {
+      offQueue()
+      offQueueFailed()
     }
   }, [])
 
@@ -535,6 +555,18 @@ export default function App(): React.JSX.Element {
         </div>
         <div className="right-cluster">
           {saveState === 'error' && <span className="error-text">{errorMsg}</span>}
+          {pendingCount > 0 && (
+            <button
+              type="button"
+              className="queue-pill"
+              title="待同步 · 点击立即重试"
+              onClick={() => {
+                window.memoglass.flushQueue().then(setPendingCount)
+              }}
+            >
+              ☁ {pendingCount}
+            </button>
+          )}
           <button
             className={`icon-btn pin-btn${pinned ? ' active' : ''}`}
             title={pinned ? '取消钉住' : '钉住面板'}
@@ -561,6 +593,14 @@ export default function App(): React.JSX.Element {
       {saveState === 'saved' && (
         <div className="saved-overlay">
           <div className="saved-check">✓</div>
+        </div>
+      )}
+
+      {saveState === 'queued' && (
+        <div className="saved-overlay">
+          <div className="saved-check queued-badge">
+            ☁<span className="queued-label">已离线暂存</span>
+          </div>
         </div>
       )}
 

@@ -38,7 +38,9 @@ export interface AppContext {
 }
 
 const api = {
-  saveMemo: (payload: SaveMemoPayload): Promise<{ ok: boolean; error?: string }> =>
+  saveMemo: (
+    payload: SaveMemoPayload
+  ): Promise<{ ok: boolean; error?: string; queued?: boolean; pendingCount?: number }> =>
     ipcRenderer.invoke('memo:save', payload),
   getConfig: (): Promise<{ serverUrl: string; configured: boolean; source: string }> =>
     ipcRenderer.invoke('config:get'),
@@ -68,6 +70,18 @@ const api = {
     const listener = (_e: unknown, ctx: AppContext | null): void => cb(ctx)
     ipcRenderer.on('context:update', listener)
     return () => ipcRenderer.removeListener('context:update', listener)
+  },
+  getQueueCount: (): Promise<number> => ipcRenderer.invoke('queue:count'),
+  flushQueue: (): Promise<number> => ipcRenderer.invoke('queue:flush'),
+  onQueueChanged: (cb: (count: number) => void): (() => void) => {
+    const listener = (_e: unknown, payload: { count: number }): void => cb(payload.count)
+    ipcRenderer.on('queue:changed', listener)
+    return () => ipcRenderer.removeListener('queue:changed', listener)
+  },
+  onQueueItemFailed: (cb: (error: string) => void): (() => void) => {
+    const listener = (_e: unknown, payload: { error: string }): void => cb(payload.error)
+    ipcRenderer.on('queue:item-failed', listener)
+    return () => ipcRenderer.removeListener('queue:item-failed', listener)
   }
 }
 

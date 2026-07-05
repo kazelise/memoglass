@@ -7,10 +7,40 @@ const UPLOAD_TIMEOUT_MS = 60000 // attachments can be a few MB; give them room
 interface MemosResult {
   ok: boolean
   error?: string
+  /** True when the failure is transport-level (no response reached the
+   *  server: DNS/connection-refused/timeout/etc.) rather than a server
+   *  response (4xx/5xx). Callers on the save path use this to decide
+   *  whether the memo is safe to queue for offline retry — a real HTTP
+   *  error means the server *did* respond (bad config/data), so retrying
+   *  blindly would just fail again. */
+  networkError?: boolean
 }
 
 export interface UploadResult extends MemosResult {
   name?: string
+}
+
+/** Classifies a caught error as "network-class" (worth queuing for offline
+ *  retry) vs. anything else. Node's `fetch` (undici) throws a `TypeError`
+ *  ("fetch failed") whose `.cause` carries the real errno code
+ *  (ECONNREFUSED/ENOTFOUND/EAI_AGAIN/...); our own timeout abort surfaces
+ *  as `AbortError`. We check name/type first, then fall back to scanning
+ *  the message and any `.cause.code` for the well-known codes, since some
+ *  runtimes/environments may not preserve the exact shape. */
+export function isNetworkError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false
+  if (e.name === 'AbortError') return true // our own request-timeout abort
+  if (e instanceof TypeError) return true // undici "fetch failed" / browser "Failed to fetch"
+  const cause = (e as { cause?: unknown }).cause
+  const code =
+    (e as NodeJS.ErrnoException).code ??
+    (cause instanceof Error ? (cause as NodeJS.ErrnoException).code : undefined)
+  const NETWORK_CODES = ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'ECONNRESET', 'ETIMEDOUT']
+  if (code && NETWORK_CODES.includes(code)) return true
+  const haystack = `${e.message} ${cause instanceof Error ? cause.message : ''}`
+  return /ECONNREFUSED|ENOTFOUND|EAI_AGAIN|ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(
+    haystack
+  )
 }
 
 async function request(
@@ -67,7 +97,7 @@ export async function createMemo(
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
-    return { ok: false, error: msg }
+    return { ok: false, error: msg, networkError: isNetworkError(e) }
   }
 }
 
@@ -102,7 +132,7 @@ export async function uploadAttachment(
     return { ok: true, name: json.name }
   } catch (e) {
     const msg = e instanceof Error ? (e.name === 'AbortError' ? '上传超时' : e.message) : String(e)
-    return { ok: false, error: msg }
+    return { ok: false, error: msg, networkError: isNetworkError(e) }
   }
 }
 

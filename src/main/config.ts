@@ -21,10 +21,21 @@ export const DEFAULT_APPEARANCE: AppearanceConfig = {
   lineHeight: 1.65
 }
 
+export interface PanelSize {
+  width: number
+  height: number
+}
+
+export const DEFAULT_PANEL_SIZE: PanelSize = {
+  width: 640,
+  height: 320
+}
+
 interface StoredConfig {
   serverUrl?: string
   tokenB64?: string // safeStorage-encrypted token, base64
   appearance?: Partial<AppearanceConfig>
+  panelSize?: Partial<PanelSize>
 }
 
 const configPath = (): string => join(app.getPath('userData'), 'config.json')
@@ -90,4 +101,17 @@ export function getAppearance(): AppearanceConfig {
 export function setAppearance(appearance: AppearanceConfig): void {
   const existing = readRawConfig()
   writeRawConfig({ ...existing, appearance })
+}
+
+export function getPanelSize(): PanelSize {
+  const p = readRawConfig().panelSize ?? {}
+  return {
+    width: typeof p.width === 'number' && p.width > 0 ? p.width : DEFAULT_PANEL_SIZE.width,
+    height: typeof p.height === 'number' && p.height > 0 ? p.height : DEFAULT_PANEL_SIZE.height
+  }
+}
+
+export function setPanelSize(size: PanelSize): void {
+  const existing = readRawConfig()
+  writeRawConfig({ ...existing, panelSize: size })
 }

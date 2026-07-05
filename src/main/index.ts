@@ -14,16 +14,26 @@ import { join } from 'path'
 import {
   type AppearanceConfig,
   getAppearance,
+  getPanelSize,
   resolveConfig,
   saveConfig,
-  setAppearance
+  setAppearance,
+  setPanelSize
 } from './config'
 import { captureContext } from './context'
 import { createMemo, listMemos, updateMemo, uploadAttachment, verifyCredentials } from './memos'
+import {
+  enqueue,
+  flushQueue,
+  getQueueCount,
+  setQueueListeners,
+  startAutoRetry,
+  type QueuedAttachment
+} from './queue'
 import { getTags, mergeSavedContent, scheduleBackgroundRefresh } from './tags'
 
-const PANEL_W = 640
-const PANEL_H = 320
+const MIN_PANEL_W = 480
+const MIN_PANEL_H = 240
 const SHORTCUTS = ['Alt+Space', 'Control+Alt+Space'] // first that registers wins
 const MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024 // 30MB per file
 
@@ -44,9 +54,10 @@ let isPinned = false
 // ---------- panel ----------
 
 function createPanel(): void {
+  const { width, height } = getPanelSize()
   panel = new BrowserWindow({
-    width: PANEL_W,
-    height: PANEL_H,
+    width,
+    height,
     type: 'panel', // NSPanel: shows without activating our app (Spotlight feel)
     frame: false,
     show: false,
@@ -54,7 +65,9 @@ function createPanel(): void {
     visualEffectState: 'active', // keep the glass alive even when unfocused
     roundedCorners: true,
     hasShadow: true,
-    resizable: false,
+    resizable: true,
+    minWidth: MIN_PANEL_W,
+    minHeight: MIN_PANEL_H,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -76,6 +89,16 @@ function createPanel(): void {
     hidePanel()
   })
 
+  // Persist user resizes so the next show (even a fresh app launch) keeps
+  // the chosen size. 'resized' only fires for manual/user-driven resizes on
+  // macOS (setBounds/setSize from code doesn't trigger it unless animated),
+  // so this never fights with positionOnActiveScreen()'s own setBounds call.
+  panel.on('resized', () => {
+    if (!panel) return
+    const { width: w, height: h } = panel.getBounds()
+    setPanelSize({ width: w, height: h })
+  })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     panel.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
@@ -85,13 +108,14 @@ function createPanel(): void {
 
 function positionOnActiveScreen(): void {
   if (!panel) return
+  const { width, height } = getPanelSize()
   const cursor = screen.getCursorScreenPoint()
   const { workArea } = screen.getDisplayNearestPoint(cursor)
   panel.setBounds({
-    x: Math.round(workArea.x + (workArea.width - PANEL_W) / 2),
+    x: Math.round(workArea.x + (workArea.width - width) / 2),
     y: Math.round(workArea.y + workArea.height * 0.22),
-    width: PANEL_W,
-    height: PANEL_H
+    width,
+    height
   })
 }
 
@@ -250,6 +274,10 @@ function registerIpc(): void {
       for (const file of attachments) {
         const uploaded = await uploadAttachment(cfg.serverUrl, cfg.token, file)
         if (!uploaded.ok || !uploaded.name) {
+          if (uploaded.networkError) {
+            const pendingCount = enqueue(content, attachments as QueuedAttachment[])
+            return { ok: true, queued: true, pendingCount }
+          }
           return {
             ok: false,
             error: `附件上传失败（${file.filename}）：${uploaded.error ?? '未知错误'}`
@@ -262,6 +290,11 @@ function registerIpc(): void {
       if (result.ok) {
         mergeSavedContent(content)
         scheduleBackgroundRefresh(3000)
+        return result
+      }
+      if (result.networkError) {
+        const pendingCount = enqueue(content, attachments as QueuedAttachment[])
+        return { ok: true, queued: true, pendingCount }
       }
       return result
     }
@@ -315,6 +348,10 @@ function registerIpc(): void {
     panel?.webContents.send('appearance:changed', appearance)
     return appearance
   })
+
+  ipcMain.handle('queue:count', () => getQueueCount())
+
+  ipcMain.handle('queue:flush', async () => flushQueue())
 }
 
 // ---------- lifecycle ----------
@@ -328,6 +365,11 @@ if (!gotLock) {
   app.whenReady().then(() => {
     electronApp.setAppUserModelId('dev.zhijie.memoglass')
 
+    setQueueListeners({
+      onChanged: (count) => panel?.webContents.send('queue:changed', { count }),
+      onItemFailed: (error) => panel?.webContents.send('queue:item-failed', { error })
+    })
+
     registerIpc()
     // Create the tray BEFORE flipping to accessory: switching the activation
     // policy (dock.hide) while a status item is being created can eat the
@@ -336,6 +378,13 @@ if (!gotLock) {
     createPanel()
     registerShortcut()
     scheduleBackgroundRefresh()
+
+    const pendingCount = getQueueCount()
+    if (pendingCount > 0) {
+      console.log(`[memoglass] ${pendingCount} pending memo(s) from a previous session; retrying`)
+      void flushQueue()
+    }
+    startAutoRetry()
 
     setTimeout(() => {
       if (process.platform === 'darwin') app.dock?.hide() // accessory: no Dock icon, no Cmd-Tab
