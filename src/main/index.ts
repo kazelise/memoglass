@@ -5,6 +5,7 @@ import {
   ipcMain,
   Menu,
   nativeImage,
+  type NativeImage,
   screen,
   Tray
 } from 'electron'
@@ -17,12 +18,19 @@ import {
   saveConfig,
   setAppearance
 } from './config'
-import { createMemo, verifyCredentials } from './memos'
+import { createMemo, uploadAttachment, verifyCredentials } from './memos'
 import { getTags, mergeSavedContent, scheduleBackgroundRefresh } from './tags'
 
 const PANEL_W = 640
 const PANEL_H = 320
 const SHORTCUTS = ['Alt+Space', 'Control+Alt+Space'] // first that registers wins
+const MAX_ATTACHMENT_BYTES = 30 * 1024 * 1024 // 30MB per file
+
+interface AttachmentUpload {
+  filename: string
+  mimeType: string
+  dataB64: string
+}
 
 let panel: BrowserWindow | null = null
 let tray: Tray | null = null
@@ -144,12 +152,22 @@ function createSettingsWindow(): void {
 const MATERIALS = ['hud', 'popover', 'under-window', 'sidebar', 'menu', 'window'] as const
 let currentMaterial: (typeof MATERIALS)[number] = 'hud'
 
-// 1x1 transparent PNG: nativeImage.createEmpty() renders as a fully blank
-// (invisible, unclickable-looking) tray item on recent macOS. A real,
-// non-empty image keeps the item alive so setTitle's text actually shows.
-const TRAY_ICON = nativeImage.createFromDataURL(
-  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
-)
+// Hand-built 18x18 (+ 36x36 @2x) black-on-transparent "pencil" glyph PNG —
+// see scripts/gen-tray-icon.mjs for the generator. A 1x1 transparent PNG
+// plus setTitle() used to stand in here, but that renders as a fully blank,
+// invisible tray item on recent macOS (especially with menu-bar managers
+// like Ice); a real template image is what actually shows up.
+const TRAY_ICON_18 =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABIAAAASCAYAAABWzo5XAAAAJ0lEQVR42mNgGAW0BP8HhSH/qWnI/1FDqGfI/0FryMAHLlXzENkAAIxkI90Pdu+3AAAAAElFTkSuQmCC'
+const TRAY_ICON_36 =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACQAAAAkCAYAAADhAJiYAAAARklEQVR42u3WsQ0AIAzEwOy/tNkA0WGQLaW/4ovMVFXV9TBBdBhMEEwQHYYwGwxhwoQJ8xOGgwuj2AwvDTiQ8rfR/cSlbQH+4pZq1FWaGQAAAABJRU5ErkJggg=='
+
+function createTrayIcon(): NativeImage {
+  const image = nativeImage.createFromDataURL(TRAY_ICON_18)
+  image.addRepresentation({ scaleFactor: 2, dataURL: TRAY_ICON_36 })
+  image.setTemplateImage(true)
+  return image
+}
 
 function trayMenu(): Menu {
   return Menu.buildFromTemplate([
@@ -176,8 +194,7 @@ function trayMenu(): Menu {
 }
 
 function createTray(): void {
-  tray = new Tray(TRAY_ICON)
-  tray.setTitle('✎')
+  tray = new Tray(createTrayIcon())
   tray.setToolTip('memoglass')
   tray.on('click', togglePanel)
   tray.on('right-click', () => tray?.popUpContextMenu(trayMenu()))
@@ -203,16 +220,41 @@ function registerShortcut(): void {
 // ---------- ipc ----------
 
 function registerIpc(): void {
-  ipcMain.handle('memo:save', async (_e, content: string) => {
-    const cfg = resolveConfig()
-    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
-    const result = await createMemo(cfg.serverUrl, cfg.token, content)
-    if (result.ok) {
-      mergeSavedContent(content)
-      scheduleBackgroundRefresh(3000)
+  ipcMain.handle(
+    'memo:save',
+    async (_e, payload: { content: string; attachments: AttachmentUpload[] }) => {
+      const cfg = resolveConfig()
+      if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+
+      const { content, attachments } = payload
+
+      for (const file of attachments) {
+        const bytes = Buffer.byteLength(file.dataB64, 'base64')
+        if (bytes > MAX_ATTACHMENT_BYTES) {
+          return { ok: false, error: `文件过大：${file.filename}` }
+        }
+      }
+
+      const attachmentNames: string[] = []
+      for (const file of attachments) {
+        const uploaded = await uploadAttachment(cfg.serverUrl, cfg.token, file)
+        if (!uploaded.ok || !uploaded.name) {
+          return {
+            ok: false,
+            error: `附件上传失败（${file.filename}）：${uploaded.error ?? '未知错误'}`
+          }
+        }
+        attachmentNames.push(uploaded.name)
+      }
+
+      const result = await createMemo(cfg.serverUrl, cfg.token, content, attachmentNames)
+      if (result.ok) {
+        mergeSavedContent(content)
+        scheduleBackgroundRefresh(3000)
+      }
+      return result
     }
-    return result
-  })
+  )
 
   ipcMain.handle('tags:list', () => getTags())
 

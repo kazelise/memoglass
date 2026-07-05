@@ -2,20 +2,26 @@
  *  Targets API cluster C (v0.27–v0.29). */
 
 const TIMEOUT_MS = 8000
+const UPLOAD_TIMEOUT_MS = 60000 // attachments can be a few MB; give them room
 
 interface MemosResult {
   ok: boolean
   error?: string
 }
 
+export interface UploadResult extends MemosResult {
+  name?: string
+}
+
 async function request(
   serverUrl: string,
   token: string,
   path: string,
-  init?: RequestInit
+  init?: RequestInit,
+  timeoutMs: number = TIMEOUT_MS
 ): Promise<Response> {
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     return await fetch(`${serverUrl.replace(/\/+$/, '')}${path}`, {
       ...init,
@@ -31,15 +37,28 @@ async function request(
   }
 }
 
+export interface AttachmentRef {
+  name: string // e.g. "attachments/xxx", as returned by uploadAttachment
+}
+
 export async function createMemo(
   serverUrl: string,
   token: string,
-  content: string
+  content: string,
+  attachmentNames?: string[]
 ): Promise<MemosResult> {
   try {
+    const body: {
+      content: string
+      visibility: string
+      attachments?: AttachmentRef[]
+    } = { content, visibility: 'PRIVATE' }
+    if (attachmentNames && attachmentNames.length > 0) {
+      body.attachments = attachmentNames.map((name) => ({ name }))
+    }
     const res = await request(serverUrl, token, '/api/v1/memos', {
       method: 'POST',
-      body: JSON.stringify({ content, visibility: 'PRIVATE' })
+      body: JSON.stringify(body)
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
@@ -48,6 +67,41 @@ export async function createMemo(
     return { ok: true }
   } catch (e) {
     const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+/** Uploads one attachment (base64-encoded content) and returns its resource
+ *  name ("attachments/xxx") for linking to a memo. */
+export async function uploadAttachment(
+  serverUrl: string,
+  token: string,
+  file: { filename: string; mimeType: string; dataB64: string }
+): Promise<UploadResult> {
+  try {
+    const res = await request(
+      serverUrl,
+      token,
+      '/api/v1/attachments',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          filename: file.filename,
+          type: file.mimeType,
+          content: file.dataB64
+        })
+      },
+      UPLOAD_TIMEOUT_MS
+    )
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+    }
+    const json = (await res.json().catch(() => null)) as { name?: string } | null
+    if (!json?.name) return { ok: false, error: '服务器未返回附件 ID' }
+    return { ok: true, name: json.name }
+  } catch (e) {
+    const msg = e instanceof Error ? (e.name === 'AbortError' ? '上传超时' : e.message) : String(e)
     return { ok: false, error: msg }
   }
 }

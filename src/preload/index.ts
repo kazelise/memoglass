@@ -6,9 +6,20 @@ export interface AppearanceConfig {
   lineHeight: number
 }
 
+export interface AttachmentUpload {
+  filename: string
+  mimeType: string
+  dataB64: string
+}
+
+export interface SaveMemoPayload {
+  content: string
+  attachments: AttachmentUpload[]
+}
+
 const api = {
-  saveMemo: (content: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('memo:save', content),
+  saveMemo: (payload: SaveMemoPayload): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('memo:save', payload),
   getConfig: (): Promise<{ serverUrl: string; configured: boolean; source: string }> =>
     ipcRenderer.invoke('config:get'),
   setConfig: (serverUrl: string, token: string): Promise<{ ok: boolean; error?: string }> =>
