@@ -1,5 +1,11 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+export interface AppearanceConfig {
+  fontFamily: string
+  fontSize: number
+  lineHeight: number
+}
+
 const api = {
   saveMemo: (content: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('memo:save', content),
@@ -13,6 +19,14 @@ const api = {
     const listener = (): void => cb()
     ipcRenderer.on('panel:shown', listener)
     return () => ipcRenderer.removeListener('panel:shown', listener)
+  },
+  getAppearance: (): Promise<AppearanceConfig> => ipcRenderer.invoke('appearance:get'),
+  setAppearance: (appearance: AppearanceConfig): Promise<AppearanceConfig> =>
+    ipcRenderer.invoke('appearance:set', appearance),
+  onAppearanceChanged: (cb: (appearance: AppearanceConfig) => void): (() => void) => {
+    const listener = (_e: unknown, appearance: AppearanceConfig): void => cb(appearance)
+    ipcRenderer.on('appearance:changed', listener)
+    return () => ipcRenderer.removeListener('appearance:changed', listener)
   }
 }
 

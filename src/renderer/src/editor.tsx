@@ -86,20 +86,47 @@ function makeHighlight(p: GlassPalette): HighlightStyle {
   ])
 }
 
-function makeTheme(p: GlassPalette, dark: boolean): ReturnType<typeof EditorView.theme> {
+/** Font/size/line-height, mirrors the shape of preload's AppearanceConfig
+ *  (kept local to avoid a renderer -> preload type dependency). */
+interface EditorAppearance {
+  fontFamily: string
+  fontSize: number
+  lineHeight: number
+}
+
+const DEFAULT_APPEARANCE: EditorAppearance = {
+  fontFamily: 'system',
+  fontSize: 15,
+  lineHeight: 1.65
+}
+
+const SYSTEM_FONT_STACK =
+  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
+
+function contentFontFamily(appearance: EditorAppearance): string {
+  return appearance.fontFamily === 'system'
+    ? SYSTEM_FONT_STACK
+    : `"${appearance.fontFamily}", ${SYSTEM_FONT_STACK}`
+}
+
+function makeTheme(
+  p: GlassPalette,
+  dark: boolean,
+  appearance: EditorAppearance
+): ReturnType<typeof EditorView.theme> {
   return EditorView.theme(
     {
       '&': {
         backgroundColor: 'transparent',
         color: p.text,
-        fontSize: '15px',
+        fontSize: `${appearance.fontSize}px`,
         height: '100%'
       },
       '.cm-content': {
         caretColor: p.cursor,
-        lineHeight: '1.65',
+        lineHeight: String(appearance.lineHeight),
         padding: '0',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif'
+        fontFamily: contentFontFamily(appearance)
       },
       '.cm-line': { padding: '0 2px' },
       '&.cm-focused': { outline: 'none' },
@@ -116,9 +143,12 @@ function makeTheme(p: GlassPalette, dark: boolean): ReturnType<typeof EditorView
 
 const themeCompartment = new Compartment()
 
-function glassAppearance(dark: boolean): ReturnType<typeof EditorView.theme>[] {
+function glassAppearance(
+  dark: boolean,
+  appearance: EditorAppearance
+): ReturnType<typeof EditorView.theme>[] {
   const p = dark ? DARK : LIGHT
-  return [makeTheme(p, dark), syntaxHighlighting(makeHighlight(p))]
+  return [makeTheme(p, dark, appearance), syntaxHighlighting(makeHighlight(p))]
 }
 
 // ---------- hashtag autocomplete ----------
@@ -326,13 +356,19 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
     const offShown = window.memoglass.onShown(() => refreshTagCache())
     const darkMq = window.matchMedia('(prefers-color-scheme: dark)')
 
+    // Both the OS appearance and the user's font/size/line-height settings can
+    // change independently at runtime; track the latest of each so either
+    // listener can reconfigure the theme with a complete, up-to-date pair.
+    let currentDark = darkMq.matches
+    let currentAppearance = DEFAULT_APPEARANCE
+
     const view = new EditorView({
       state: EditorState.create({
         doc: '',
         extensions: [
           history(),
           markdown({ base: markdownLanguage }), // addKeymap defaults true → Enter continues lists/tasks (incl. exit-on-empty-item)
-          themeCompartment.of(glassAppearance(darkMq.matches)),
+          themeCompartment.of(glassAppearance(currentDark, currentAppearance)),
           placeholder('随手记点什么… 支持 Markdown 和 #标签'),
           EditorView.lineWrapping,
           hashtagColorPlugin,
@@ -372,13 +408,30 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
     })
     viewRef.current = view
 
+    const reconfigureTheme = (): void => {
+      view.dispatch({
+        effects: themeCompartment.reconfigure(glassAppearance(currentDark, currentAppearance))
+      })
+    }
+
     const onSchemeChange = (e: MediaQueryListEvent): void => {
-      view.dispatch({ effects: themeCompartment.reconfigure(glassAppearance(e.matches)) })
+      currentDark = e.matches
+      reconfigureTheme()
     }
     darkMq.addEventListener('change', onSchemeChange)
 
+    window.memoglass.getAppearance().then((a) => {
+      currentAppearance = a
+      reconfigureTheme()
+    })
+    const offAppearance = window.memoglass.onAppearanceChanged((a) => {
+      currentAppearance = a
+      reconfigureTheme()
+    })
+
     return () => {
       offShown()
+      offAppearance()
       darkMq.removeEventListener('change', onSchemeChange)
       view.destroy()
       viewRef.current = null

@@ -332,3 +332,93 @@ body,
 .cm-task-bracket {
   cursor: pointer;
 }
+
+/* ---------- settings window ---------- */
+
+.settings-view {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 30px 26px 22px;
+}
+
+.settings-view h2 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.settings-row > label {
+  width: 40px;
+  flex-shrink: 0;
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+
+.settings-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-field select {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-1);
+  background: var(--input-bg);
+  border: 0.5px solid var(--input-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.settings-custom-font {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  color: var(--text-1);
+  background: var(--input-bg);
+  border: 0.5px solid var(--input-border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.settings-field input[type='range'] {
+  flex: 1;
+  min-width: 0;
+}
+
+.settings-value {
+  width: 44px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+
+.settings-preview {
+  margin-top: auto;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--input-bg);
+  border: 0.5px solid var(--input-border);
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

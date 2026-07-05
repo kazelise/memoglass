@@ -9,24 +9,48 @@ export interface ResolvedConfig {
   source: 'user' | 'dev' | 'none'
 }
 
+export interface AppearanceConfig {
+  fontFamily: string
+  fontSize: number
+  lineHeight: number
+}
+
+export const DEFAULT_APPEARANCE: AppearanceConfig = {
+  fontFamily: 'system',
+  fontSize: 15,
+  lineHeight: 1.65
+}
+
 interface StoredConfig {
-  serverUrl: string
-  tokenB64: string // safeStorage-encrypted token, base64
+  serverUrl?: string
+  tokenB64?: string // safeStorage-encrypted token, base64
+  appearance?: Partial<AppearanceConfig>
 }
 
 const configPath = (): string => join(app.getPath('userData'), 'config.json')
 const DEV_PAT_FILE = join(homedir(), '.memoglass-dev', 'test-pat.txt')
 const DEV_SERVER = 'http://localhost:5231'
 
-function readStored(): StoredConfig | null {
+/** Read the whole config file as-is (tolerant of missing/partial fields), so
+ *  callers can merge in the one field they care about without clobbering the
+ *  rest of the file. */
+function readRawConfig(): StoredConfig {
   try {
-    if (!existsSync(configPath())) return null
-    const raw = JSON.parse(readFileSync(configPath(), 'utf-8')) as StoredConfig
-    if (!raw.serverUrl || !raw.tokenB64) return null
-    return raw
+    if (!existsSync(configPath())) return {}
+    return JSON.parse(readFileSync(configPath(), 'utf-8')) as StoredConfig
   } catch {
-    return null
+    return {}
   }
+}
+
+function writeRawConfig(next: StoredConfig): void {
+  writeFileSync(configPath(), JSON.stringify(next), { mode: 0o600 })
+}
+
+function readStored(): { serverUrl: string; tokenB64: string } | null {
+  const raw = readRawConfig()
+  if (!raw.serverUrl || !raw.tokenB64) return null
+  return { serverUrl: raw.serverUrl, tokenB64: raw.tokenB64 }
 }
 
 /** User config first; fall back to the local dev PAT file so development
@@ -50,6 +74,20 @@ export function resolveConfig(): ResolvedConfig {
 
 export function saveConfig(serverUrl: string, token: string): void {
   const tokenB64 = safeStorage.encryptString(token).toString('base64')
-  const stored: StoredConfig = { serverUrl: serverUrl.replace(/\/+$/, ''), tokenB64 }
-  writeFileSync(configPath(), JSON.stringify(stored), { mode: 0o600 })
+  const existing = readRawConfig()
+  writeRawConfig({ ...existing, serverUrl: serverUrl.replace(/\/+$/, ''), tokenB64 })
+}
+
+export function getAppearance(): AppearanceConfig {
+  const a = readRawConfig().appearance ?? {}
+  return {
+    fontFamily: typeof a.fontFamily === 'string' ? a.fontFamily : DEFAULT_APPEARANCE.fontFamily,
+    fontSize: typeof a.fontSize === 'number' ? a.fontSize : DEFAULT_APPEARANCE.fontSize,
+    lineHeight: typeof a.lineHeight === 'number' ? a.lineHeight : DEFAULT_APPEARANCE.lineHeight
+  }
+}
+
+export function setAppearance(appearance: AppearanceConfig): void {
+  const existing = readRawConfig()
+  writeRawConfig({ ...existing, appearance })
 }

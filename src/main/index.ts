@@ -10,7 +10,13 @@ import {
 } from 'electron'
 import { electronApp, is } from '@electron-toolkit/utils'
 import { join } from 'path'
-import { resolveConfig, saveConfig } from './config'
+import {
+  type AppearanceConfig,
+  getAppearance,
+  resolveConfig,
+  saveConfig,
+  setAppearance
+} from './config'
 import { createMemo, verifyCredentials } from './memos'
 import { getTags, mergeSavedContent, scheduleBackgroundRefresh } from './tags'
 
@@ -20,6 +26,7 @@ const SHORTCUTS = ['Alt+Space', 'Control+Alt+Space'] // first that registers win
 
 let panel: BrowserWindow | null = null
 let tray: Tray | null = null
+let settingsWindow: BrowserWindow | null = null
 let activeShortcut = ''
 
 // ---------- panel ----------
@@ -91,6 +98,45 @@ function togglePanel(): void {
   else showPanel()
 }
 
+// ---------- settings window ----------
+
+function createSettingsWindow(): void {
+  if (settingsWindow) {
+    settingsWindow.show()
+    settingsWindow.focus()
+    app.focus({ steal: true })
+    return
+  }
+
+  settingsWindow = new BrowserWindow({
+    width: 480,
+    height: 340,
+    resizable: false,
+    titleBarStyle: 'hiddenInset',
+    vibrancy: 'under-window',
+    show: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false
+    }
+  })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    settingsWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}#/settings`)
+  } else {
+    settingsWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: 'settings' })
+  }
+
+  settingsWindow.once('ready-to-show', () => {
+    settingsWindow?.show()
+    app.focus({ steal: true }) // accessory app: menu-bar clicks don't activate us
+  })
+
+  settingsWindow.on('closed', () => {
+    settingsWindow = null
+  })
+}
+
 // ---------- tray ----------
 
 // Vibrancy materials for live A/B testing via the tray menu; the winner gets
@@ -98,9 +144,18 @@ function togglePanel(): void {
 const MATERIALS = ['hud', 'popover', 'under-window', 'sidebar', 'menu', 'window'] as const
 let currentMaterial: (typeof MATERIALS)[number] = 'hud'
 
+// 1x1 transparent PNG: nativeImage.createEmpty() renders as a fully blank
+// (invisible, unclickable-looking) tray item on recent macOS. A real,
+// non-empty image keeps the item alive so setTitle's text actually shows.
+const TRAY_ICON = nativeImage.createFromDataURL(
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='
+)
+
 function trayMenu(): Menu {
   return Menu.buildFromTemplate([
     { label: '打开 memoglass', click: showPanel },
+    { type: 'separator' },
+    { label: '设置…', click: createSettingsWindow },
     { type: 'separator' },
     {
       label: `玻璃材质（当前 ${currentMaterial}）`,
@@ -121,8 +176,8 @@ function trayMenu(): Menu {
 }
 
 function createTray(): void {
-  tray = new Tray(nativeImage.createEmpty())
-  tray.setTitle('✎') // text-only menu bar item; proper template icon later
+  tray = new Tray(TRAY_ICON)
+  tray.setTitle('✎')
   tray.setToolTip('memoglass')
   tray.on('click', togglePanel)
   tray.on('right-click', () => tray?.popUpContextMenu(trayMenu()))
@@ -174,6 +229,14 @@ function registerIpc(): void {
   })
 
   ipcMain.on('panel:hide', hidePanel)
+
+  ipcMain.handle('appearance:get', () => getAppearance())
+
+  ipcMain.handle('appearance:set', (_e, appearance: AppearanceConfig) => {
+    setAppearance(appearance)
+    panel?.webContents.send('appearance:changed', appearance)
+    return appearance
+  })
 }
 
 // ---------- lifecycle ----------
