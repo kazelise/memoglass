@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useGlassEditor } from './editor'
+import type { MemoListItem } from '../../preload/index'
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'error'
-type View = 'editor' | 'setup'
+type View = 'editor' | 'setup' | 'switcher'
+
+interface EditTarget {
+  name: string
+  updateTime: string
+}
 
 const TAG_RE = /#([^\s#,;!?()[\]{}"'`]+)/g
 
@@ -10,6 +16,76 @@ function extractTags(text: string): string[] {
   const tags = new Set<string>()
   for (const m of text.matchAll(TAG_RE)) tags.add(m[1])
   return [...tags].slice(0, 4)
+}
+
+/** Recent-memo cache for the ⌘P switcher: module-level so it survives view
+ *  swaps and lets the switcher render instantly on open (before the
+ *  background refresh lands). */
+let memoListCache: MemoListItem[] = []
+
+async function refreshMemoList(): Promise<MemoListItem[]> {
+  try {
+    const res = await window.memoglass.listMemos()
+    if (res.ok && res.memos) {
+      memoListCache = res.memos
+    }
+  } catch {
+    // keep whatever we had; the switcher will just show stale data
+  }
+  return memoListCache
+}
+
+/** First non-blank line, with leading markdown markers stripped, for the
+ *  switcher's one-line preview. */
+function stripMarkdown(text: string): string {
+  const firstLine = text.split('\n').find((l) => l.trim().length > 0) ?? ''
+  return firstLine
+    .replace(/^\s*#{1,6}\s*/, '')
+    .replace(/^\s*[-*+]\s+(\[[ xX]\]\s*)?/, '')
+    .replace(/^\s*\d+[.)]\s+/, '')
+    .replace(/^\s*>\s*/, '')
+    .trim()
+}
+
+function truncate(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max)}…` : text
+}
+
+/** Chinese relative-time label for the switcher's second line. */
+function formatRelative(iso: string): string {
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return ''
+  const now = Date.now()
+  const diffSec = Math.max(0, Math.floor((now - then) / 1000))
+  if (diffSec < 60) return '刚刚'
+  const diffMin = Math.floor(diffSec / 60)
+  if (diffMin < 60) return `${diffMin} 分钟前`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour} 小时前`
+  const d = new Date(then)
+  const yesterday = new Date(now)
+  yesterday.setDate(yesterday.getDate() - 1)
+  if (
+    d.getFullYear() === yesterday.getFullYear() &&
+    d.getMonth() === yesterday.getMonth() &&
+    d.getDate() === yesterday.getDate()
+  ) {
+    return '昨天'
+  }
+  return `${d.getMonth() + 1}/${d.getDate()}`
+}
+
+/** Whitespace-tokenized AND filter over memo content, case-insensitive. */
+function filterMemos(list: MemoListItem[], query: string): MemoListItem[] {
+  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const base =
+    words.length === 0
+      ? list
+      : list.filter((m) => {
+          const text = m.content.toLowerCase()
+          return words.every((w) => text.includes(w))
+        })
+  return base.slice(0, 50)
 }
 
 interface AttachmentItem {
@@ -70,9 +146,28 @@ export default function App(): React.JSX.Element {
   const [source, setSource] = useState('')
   const [attachments, setAttachments] = useState<AttachmentItem[]>([])
   const [dragActive, setDragActive] = useState(false)
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
+  const [pinned, setPinned] = useState(false)
   const saveStateRef = useRef(saveState)
   saveStateRef.current = saveState
   const dragDepthRef = useRef(0)
+
+  // ---------- ⌘P switcher state ----------
+  const [memoList, setMemoList] = useState<MemoListItem[]>(memoListCache)
+  const [switcherQuery, setSwitcherQuery] = useState('')
+  const [switcherIndex, setSwitcherIndex] = useState(0)
+  const filtered = filterMemos(memoList, switcherQuery)
+  // Clamp for *display/selection* without a setState-in-effect: the raw
+  // switcherIndex only ever grows via arrow keys (already bounds-checked
+  // there) or resets to 0 on new input, but the list can independently
+  // shrink under it (background refresh landing while filtered), so we
+  // derive a safe value at render time instead of syncing state to match.
+  const safeSwitcherIndex = Math.min(switcherIndex, Math.max(filtered.length - 1, 0))
+  const filteredRef = useRef(filtered)
+  filteredRef.current = filtered
+  const safeSwitcherIndexRef = useRef(safeSwitcherIndex)
+  safeSwitcherIndexRef.current = safeSwitcherIndex
+  const itemRefs = useRef<(HTMLDivElement | null)[]>([])
 
   const addFiles = useCallback(async (files: FileList | File[]) => {
     const list = Array.from(files)
@@ -93,6 +188,36 @@ export default function App(): React.JSX.Element {
     async (text: string) => {
       const trimmed = text.trim()
       const hasAttachments = attachments.length > 0
+
+      if (editTarget) {
+        if (!trimmed && !hasAttachments) {
+          window.memoglass.hidePanel()
+          return
+        }
+        if (hasAttachments) {
+          setSaveState('error')
+          setErrorMsg('编辑模式暂不支持新增附件')
+          return
+        }
+        if (saveStateRef.current === 'saving') return
+        setSaveState('saving')
+        const res = await window.memoglass.updateMemo(editTarget.name, trimmed)
+        if (res.ok) {
+          setSaveState('saved')
+          setTimeout(() => {
+            handle.clear()
+            setContent('')
+            setEditTarget(null)
+            setSaveState('idle')
+            window.memoglass.hidePanel()
+          }, 450)
+        } else {
+          setSaveState('error')
+          setErrorMsg(res.error ?? '更新失败')
+        }
+        return
+      }
+
       if (!trimmed && !hasAttachments) {
         window.memoglass.hidePanel()
         return
@@ -124,8 +249,16 @@ export default function App(): React.JSX.Element {
         setErrorMsg(res.error ?? '保存失败')
       }
     },
-    [attachments]
+    [attachments, editTarget]
   )
+
+  const openSwitcher = useCallback(() => {
+    setSwitcherQuery('')
+    setSwitcherIndex(0)
+    setMemoList(memoListCache)
+    setView('switcher')
+    void refreshMemoList().then(setMemoList)
+  }, [])
 
   const { containerRef, handle } = useGlassEditor({
     onSave: doSave,
@@ -133,8 +266,56 @@ export default function App(): React.JSX.Element {
     onChange: (t) => {
       setContent(t)
       if (saveStateRef.current === 'error') setSaveState('idle')
-    }
+    },
+    onSwitcher: openSwitcher
   })
+
+  const startNew = useCallback(() => {
+    handle.clear()
+    setContent('')
+    setEditTarget(null)
+    setAttachments((prev) => {
+      prev.forEach(revokePreview)
+      return []
+    })
+    setView('editor')
+    setTimeout(() => handle.focus(), 30)
+  }, [handle])
+
+  const cancelEdit = useCallback(() => {
+    handle.clear()
+    setContent('')
+    setEditTarget(null)
+    setAttachments((prev) => {
+      prev.forEach(revokePreview)
+      return []
+    })
+    handle.focus()
+  }, [handle])
+
+  const loadMemoIntoEditor = useCallback(
+    (memo: MemoListItem) => {
+      handle.setContent(memo.content)
+      setContent(memo.content)
+      setEditTarget({ name: memo.name, updateTime: memo.updateTime })
+      setAttachments((prev) => {
+        prev.forEach(revokePreview)
+        return []
+      })
+      if (saveStateRef.current === 'error') setSaveState('idle')
+      setView('editor')
+      setTimeout(() => handle.focus(), 30)
+    },
+    [handle]
+  )
+
+  const togglePin = useCallback(() => {
+    setPinned((prev) => {
+      const next = !prev
+      window.memoglass.setPinned(next)
+      return next
+    })
+  }, [])
 
   // Focus editor every time the panel appears; check config on mount
   useEffect(() => {
@@ -144,10 +325,44 @@ export default function App(): React.JSX.Element {
     })
     const off = window.memoglass.onShown(() => {
       setTimeout(() => handle.focus(), 30)
+      // Pre-warm the switcher cache on every panel show, so ⌘P opens instantly.
+      void refreshMemoList().then(setMemoList)
     })
     handle.focus()
     return off
   }, [])
+
+  // ---------- ⌘P switcher keyboard nav ----------
+  useEffect(() => {
+    if (view !== 'switcher') return
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSwitcherIndex((i) => Math.min(i + 1, Math.max(filteredRef.current.length - 1, 0)))
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSwitcherIndex((i) => Math.max(i - 1, 0))
+      } else if (e.key === 'Enter') {
+        e.preventDefault()
+        const target = filteredRef.current[safeSwitcherIndexRef.current]
+        if (target) loadMemoIntoEditor(target)
+      } else if (e.key === 'Escape') {
+        e.preventDefault()
+        setView('editor')
+      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        setView('editor')
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [view, loadMemoIntoEditor])
+
+  // Keep selected row in view as the user arrows through the list.
+  useEffect(() => {
+    if (view !== 'switcher') return
+    itemRefs.current[safeSwitcherIndex]?.scrollIntoView({ block: 'nearest' })
+  }, [safeSwitcherIndex, view])
 
   if (view === 'setup') {
     return <SetupView onDone={() => setView('editor')} />
@@ -192,6 +407,11 @@ export default function App(): React.JSX.Element {
     }
   }
 
+  // NOTE: the editor DOM node (`.editor-wrap`) must stay mounted for the
+  // lifetime of the app — CodeMirror's EditorView is created once and
+  // attached to it imperatively. The switcher is therefore rendered as an
+  // overlay on top of the (still-live, still-holding-your-draft) editor
+  // rather than swapping it out of the tree.
   return (
     <div
       className={`card${dragActive ? ' drop-active' : ''}`}
@@ -201,6 +421,17 @@ export default function App(): React.JSX.Element {
       onDrop={onDrop}
     >
       <div className="drag-strip" />
+
+      {editTarget && view === 'editor' && (
+        <div className="edit-banner">
+          <span>
+            正在编辑 · {formatRelative(editTarget.updateTime)} <kbd>⌘↩</kbd> 保存更新
+          </span>
+          <button className="edit-banner-cancel" onClick={cancelEdit}>
+            取消
+          </button>
+        </div>
+      )}
 
       <div
         className="editor-wrap"
@@ -228,10 +459,13 @@ export default function App(): React.JSX.Element {
         <div className="right-cluster">
           {saveState === 'error' && <span className="error-text">{errorMsg}</span>}
           <button
-            className="icon-btn"
-            title="设置"
-            onClick={() => window.memoglass.openSettings()}
+            className={`icon-btn pin-btn${pinned ? ' active' : ''}`}
+            title={pinned ? '取消钉住' : '钉住面板'}
+            onClick={togglePin}
           >
+            📌
+          </button>
+          <button className="icon-btn" title="设置" onClick={() => window.memoglass.openSettings()}>
             ⚙
           </button>
           {source === 'dev' && <span className="dev-badge">dev</span>}
@@ -250,6 +484,54 @@ export default function App(): React.JSX.Element {
       {saveState === 'saved' && (
         <div className="saved-overlay">
           <div className="saved-check">✓</div>
+        </div>
+      )}
+
+      {view === 'switcher' && (
+        <div className="switcher-overlay">
+          <div className="switcher-search-row">
+            <input
+              className="switcher-search-input"
+              autoFocus
+              placeholder="搜索最近笔记…"
+              value={switcherQuery}
+              onChange={(e) => {
+                setSwitcherQuery(e.target.value)
+                setSwitcherIndex(0)
+              }}
+            />
+            <button className="switcher-new-btn" onClick={startNew}>
+              ＋ 新建
+            </button>
+          </div>
+          <div className="switcher-list">
+            {filtered.length === 0 && <div className="switcher-empty">没有匹配的笔记</div>}
+            {filtered.map((memo, i) => {
+              const preview = truncate(stripMarkdown(memo.content) || '（空白笔记）', 60)
+              const memoTags = (memo.tags ?? []).slice(0, 2)
+              return (
+                <div
+                  key={memo.name}
+                  ref={(el) => {
+                    itemRefs.current[i] = el
+                  }}
+                  className={`switcher-item${i === safeSwitcherIndex ? ' selected' : ''}`}
+                  onMouseEnter={() => setSwitcherIndex(i)}
+                  onClick={() => loadMemoIntoEditor(memo)}
+                >
+                  <div className="switcher-item-line1">{preview}</div>
+                  <div className="switcher-item-line2">
+                    <span className="switcher-item-time">{formatRelative(memo.updateTime)}</span>
+                    {memoTags.map((t) => (
+                      <span className="tag-pill switcher-item-tag" key={t}>
+                        #{t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
     </div>

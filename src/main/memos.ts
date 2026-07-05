@@ -116,3 +116,68 @@ export async function verifyCredentials(serverUrl: string, token: string): Promi
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
+
+const LIST_TIMEOUT_MS = 10000
+
+export interface MemoListItem {
+  name: string
+  content: string
+  updateTime: string
+  tags?: string[]
+  pinned?: boolean
+}
+
+export interface ListMemosResult extends MemosResult {
+  memos?: MemoListItem[]
+}
+
+/** Recent-memos list for the ⌘P switcher. */
+export async function listMemos(
+  serverUrl: string,
+  token: string,
+  pageSize = 50
+): Promise<ListMemosResult> {
+  try {
+    const res = await request(
+      serverUrl,
+      token,
+      `/api/v1/memos?pageSize=${pageSize}`,
+      undefined,
+      LIST_TIMEOUT_MS
+    )
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+    }
+    const json = (await res.json().catch(() => null)) as { memos?: MemoListItem[] } | null
+    if (!json?.memos) return { ok: false, error: '服务器返回格式异常' }
+    return { ok: true, memos: json.memos }
+  } catch (e) {
+    const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
+    return { ok: false, error: msg }
+  }
+}
+
+/** Patches an existing memo's content only. `name` already carries the
+ *  "memos/xxx" resource prefix returned by the list endpoint. */
+export async function updateMemo(
+  serverUrl: string,
+  token: string,
+  name: string,
+  content: string
+): Promise<MemosResult> {
+  try {
+    const res = await request(serverUrl, token, `/api/v1/${name}?updateMask=content`, {
+      method: 'PATCH',
+      body: JSON.stringify({ content })
+    })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      return { ok: false, error: `HTTP ${res.status}: ${body.slice(0, 120)}` }
+    }
+    return { ok: true }
+  } catch (e) {
+    const msg = e instanceof Error ? (e.name === 'AbortError' ? '请求超时' : e.message) : String(e)
+    return { ok: false, error: msg }
+  }
+}

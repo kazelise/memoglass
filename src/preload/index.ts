@@ -17,6 +17,20 @@ export interface SaveMemoPayload {
   attachments: AttachmentUpload[]
 }
 
+export interface MemoListItem {
+  name: string
+  content: string
+  updateTime: string
+  tags?: string[]
+  pinned?: boolean
+}
+
+export interface ListMemosResult {
+  ok: boolean
+  error?: string
+  memos?: MemoListItem[]
+}
+
 const api = {
   saveMemo: (payload: SaveMemoPayload): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('memo:save', payload),
@@ -27,6 +41,10 @@ const api = {
   hidePanel: (): void => ipcRenderer.send('panel:hide'),
   openSettings: (): void => ipcRenderer.send('settings:open'),
   listTags: (): Promise<{ name: string; count: number }[]> => ipcRenderer.invoke('tags:list'),
+  listMemos: (): Promise<ListMemosResult> => ipcRenderer.invoke('memos:list'),
+  updateMemo: (name: string, content: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('memo:update', name, content),
+  setPinned: (pinned: boolean): void => ipcRenderer.send('panel:setPinned', pinned),
   onShown: (cb: () => void): (() => void) => {
     const listener = (): void => cb()
     ipcRenderer.on('panel:shown', listener)

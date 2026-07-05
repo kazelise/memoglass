@@ -18,7 +18,7 @@ import {
   saveConfig,
   setAppearance
 } from './config'
-import { createMemo, uploadAttachment, verifyCredentials } from './memos'
+import { createMemo, listMemos, updateMemo, uploadAttachment, verifyCredentials } from './memos'
 import { getTags, mergeSavedContent, scheduleBackgroundRefresh } from './tags'
 
 const PANEL_W = 640
@@ -36,6 +36,9 @@ let panel: BrowserWindow | null = null
 let tray: Tray | null = null
 let settingsWindow: BrowserWindow | null = null
 let activeShortcut = ''
+// Pinned panels ignore the blur-to-dismiss behavior (Spotlight feel would
+// otherwise close the switcher/editor the instant focus leaves the panel).
+let isPinned = false
 
 // ---------- panel ----------
 
@@ -68,6 +71,7 @@ function createPanel(): void {
   // Spotlight behavior: click elsewhere -> dismiss
   panel.on('blur', () => {
     if (panel?.webContents.isDevToolsOpened()) return
+    if (isPinned) return // explicit pin overrides the click-away dismiss
     hidePanel()
   })
 
@@ -257,6 +261,27 @@ function registerIpc(): void {
   )
 
   ipcMain.handle('tags:list', () => getTags())
+
+  ipcMain.handle('memos:list', async () => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+    return listMemos(cfg.serverUrl, cfg.token)
+  })
+
+  ipcMain.handle('memo:update', async (_e, name: string, content: string) => {
+    const cfg = resolveConfig()
+    if (cfg.source === 'none') return { ok: false, error: '未配置服务器' }
+    const result = await updateMemo(cfg.serverUrl, cfg.token, name, content)
+    if (result.ok) {
+      mergeSavedContent(content)
+      scheduleBackgroundRefresh(3000)
+    }
+    return result
+  })
+
+  ipcMain.on('panel:setPinned', (_e, pinned: boolean) => {
+    isPinned = pinned
+  })
 
   ipcMain.handle('config:get', () => {
     const cfg = resolveConfig()

@@ -524,3 +524,171 @@ body,
 .icon-btn:hover {
   color: var(--text-1);
 }
+
+.icon-btn.pin-btn.active {
+  color: var(--accent-text);
+}
+
+/* ---------- edit-mode banner ---------- */
+
+.edit-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: var(--pill-bg);
+  border: 0.5px solid var(--pill-border);
+  font-size: 11.5px;
+  color: var(--accent-text);
+}
+
+.edit-banner kbd {
+  font-family: inherit;
+  font-size: 10px;
+  opacity: 0.85;
+  background: var(--kbd-bg);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.edit-banner-cancel {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 11px;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.edit-banner-cancel:hover {
+  color: var(--text-1);
+}
+
+/* ---------- ⌘P switcher ---------- */
+
+.switcher-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  border-radius: inherit;
+  background: var(--tooltip-bg);
+  -webkit-backdrop-filter: blur(24px);
+  backdrop-filter: blur(24px);
+  padding: 22px 20px 16px;
+  animation: fade-in 0.12s ease-out;
+}
+
+.switcher-search-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+
+.switcher-search-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-1);
+  background: var(--input-bg);
+  border: 0.5px solid var(--input-border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  outline: none;
+}
+
+.switcher-search-input:focus {
+  border-color: var(--pill-border);
+}
+
+.switcher-search-input::placeholder {
+  color: var(--text-3);
+}
+
+.switcher-new-btn {
+  flex-shrink: 0;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-1);
+  background: var(--btn-bg);
+  border: 0.5px solid var(--btn-border);
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s;
+}
+
+.switcher-new-btn:hover {
+  background: var(--save-bg);
+  border-color: transparent;
+  color: #fff;
+}
+
+.switcher-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.switcher-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.switcher-item.selected,
+.switcher-item:hover {
+  background: var(--tooltip-selected);
+}
+
+.switcher-item-line1 {
+  font-size: 13px;
+  color: var(--text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switcher-item-line2 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.switcher-item-time {
+  font-size: 11px;
+  color: var(--text-3);
+  flex-shrink: 0;
+}
+
+.switcher-item-tag {
+  font-size: 10.5px;
+  padding: 1.5px 7px;
+}
+
+.switcher-empty {
+  padding: 28px 0;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-3);
+}

@@ -331,23 +331,25 @@ interface EditorProps {
   onSave: (content: string) => void
   onEscape: () => void
   onChange: (content: string) => void
+  onSwitcher: () => void
 }
 
 export interface EditorHandle {
   focus: () => void
   clear: () => void
   getContent: () => string
+  setContent: (text: string) => void
 }
 
-export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
+export function useGlassEditor({ onSave, onEscape, onChange, onSwitcher }: EditorProps): {
   containerRef: React.RefObject<HTMLDivElement | null>
   handle: EditorHandle
 } {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<EditorView | null>(null)
   // Keep latest callbacks without rebuilding the editor
-  const cbRef = useRef({ onSave, onEscape, onChange })
-  cbRef.current = { onSave, onEscape, onChange }
+  const cbRef = useRef({ onSave, onEscape, onChange, onSwitcher })
+  cbRef.current = { onSave, onEscape, onChange, onSwitcher }
 
   useEffect(() => {
     if (!containerRef.current) return
@@ -392,6 +394,13 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
                 key: 'Escape',
                 run: () => {
                   cbRef.current.onEscape()
+                  return true
+                }
+              },
+              {
+                key: 'Mod-p',
+                run: () => {
+                  cbRef.current.onSwitcher()
                   return true
                 }
               }
@@ -445,7 +454,15 @@ export function useGlassEditor({ onSave, onEscape, onChange }: EditorProps): {
       if (!v) return
       v.dispatch({ changes: { from: 0, to: v.state.doc.length, insert: '' } })
     },
-    getContent: () => viewRef.current?.state.doc.toString() ?? ''
+    getContent: () => viewRef.current?.state.doc.toString() ?? '',
+    setContent: (text: string) => {
+      const v = viewRef.current
+      if (!v) return
+      v.dispatch({
+        changes: { from: 0, to: v.state.doc.length, insert: text },
+        selection: EditorSelection.cursor(text.length)
+      })
+    }
   }
 
   return { containerRef, handle }
